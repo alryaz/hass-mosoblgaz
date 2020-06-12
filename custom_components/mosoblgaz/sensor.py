@@ -19,7 +19,8 @@ from homeassistant.helpers.typing import HomeAssistantType, ConfigType
 
 from . import DATA_CONFIG, CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DATA_API_OBJECTS, DATA_ENTITIES, DATA_UPDATERS, \
     DEFAULT_METER_NAME_FORMAT, CONF_METER_NAME, CONF_CONTRACT_NAME, \
-    DEFAULT_CONTRACT_NAME_FORMAT, CONF_INVOICES, DEFAULT_INVOICE_NAME_FORMAT, CONF_INVOICE_NAME, CONF_METERS
+    DEFAULT_CONTRACT_NAME_FORMAT, CONF_INVOICES, DEFAULT_INVOICE_NAME_FORMAT, CONF_INVOICE_NAME, CONF_METERS, \
+    CONF_INVERT_INVOICES
 from .mosoblgaz import MosoblgazAPI, MosoblgazException, Meter, Invoice, Contract, PartialOfflineException
 
 _LOGGER = logging.getLogger(__name__)
@@ -124,6 +125,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
 
         # Process last and previous invoices
         if not use_filter or user_cfg[CONF_CONTRACTS][contract_id].get(CONF_INVOICES, True):
+            invert_invoices = user_cfg[CONF_INVERT_INVOICES]
             for group, invoices in contract.all_invoices_by_groups.items():
                 if invoices:
                     if contract_entity.invoice_entities is None:
@@ -137,7 +139,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                         contract_entity.async_schedule_update_ha_state(force_refresh=True)
 
                     else:
-                        invoice_entity = MOGInvoiceSensor(invoices, invoice_name_format)
+                        invoice_entity = MOGInvoiceSensor(invoices, invoice_name_format, invert_invoices)
                         new_invoices[(contract.contract_id, group)] = invoice_entity
                         contract_entity.invoice_entities[group] = invoice_entity
                         tasks.append(invoice_entity.async_update())
@@ -285,11 +287,6 @@ class MOGContractSensor(MOGEntity):
         """Return the unique ID of the sensor"""
         return 'ls_' + str(self.contract.contract_id)
 
-    @property
-    def should_poll(self) -> bool:
-        """Return whether the entity should be polled or not"""
-        return False
-
 
 class MOGMeterSensor(MOGEntity):
     """The class for this sensor"""
@@ -327,6 +324,8 @@ class MOGMeterSensor(MOGEntity):
         self._state = meter_status
         self._attributes = attributes
 
+        _LOGGER.debug('Update for meter %s finished' % self)
+
     @property
     def name(self):
         """Return the name of the sensor"""
@@ -339,9 +338,10 @@ class MOGMeterSensor(MOGEntity):
 
 
 class MOGInvoiceSensor(MOGEntity):
-    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'], name_format: str):
+    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'], name_format: str, invert_state: bool = False):
         super().__init__()
 
+        self._invert_state = invert_state
         self._icon = 'mdi:receipt'
         self._unit = 'руб.'
         self._name_format = name_format
@@ -382,8 +382,20 @@ class MOGInvoiceSensor(MOGEntity):
                     prefix + 'payments_count': invoice.payments_count,
                 })
 
-        self._state = round(last_invoice.total - last_invoice.paid - last_invoice.balance, 2)
+        state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
+        if self._invert_state:
+            state_value *= -1
+
+        state_value = round(state_value, 2)
+
+        if state_value == 0:
+            # while this looks weird, it gets rid of a useless negative sign
+            state_value = 0.0
+
+        self._state = state_value
         self._attributes = attributes
+
+        _LOGGER.debug('Update for invoice %s finished' % self)
 
     @property
     def friendly_group_name(self):

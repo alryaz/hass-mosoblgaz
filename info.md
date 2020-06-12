@@ -4,9 +4,12 @@
 [![Donate PayPal](https://img.shields.io/badge/Donate-Paypal-blueviolet.svg)](https://www.paypal.me/alryaz)
 {% set mainline_num_ver = version_available.replace("v", "").replace(".", "") | int %}{%- set features = {
     'v0.0.1': 'Initial release, contracts / meters / invoices supported for reading',
-}-%}{%- set breaking_changes = {} -%}{%- set bugfixes = {
-    'v0.0.2': 'Fixed broken requests due to invalid offline statuses parsing',
-    'v0.0.3': 'Fixed double polling for entities and a typo within code'
+    'v0.0.3': 'Invoice value inversion',
+}-%}{%- set breaking_changes = {
+    'v0.0.3': ['Invoices show negative values on overpayment (as opposed positive to pre-0.0.3)']
+} -%}{%- set bugfixes = {
+    'v0.0.2': ['Fixed broken requests due to invalid offline statuses parsing'],
+    'v0.0.3': ['Fixed double polling for entities and a typo within code'],
 } -%}
 {% if installed %}{% if version_installed == "master" %}
 #### ⚠ You are using development version
@@ -17,12 +20,9 @@ Please, do not use this branch in production environments.
 #### 🚨 You are using an outdated release of Hekr component{% if num_ver < 20 %}
 {% set print_header = True %}{% for ver, changes in breaking_changes.items() %}{% set ver = ver.replace("v", "").replace(".","") | int %}{% if num_ver < ver %}{% if print_header %}
 ##### Breaking changes (`{{ version_installed }}` -> `{{ version_available }}`){% set print_header = False %}{% endif %}{% for change in changes %}
-{{ '- '+change.pop(0) }}{% for changeline in change %}
-{{ '  '+changeline }}{% endfor %}{% endfor %}{% endif %}{% endfor %}
-{% endif %}{% endif %}
-
-{% set print_header = True %}{% for ver, fixes in bugfixes.items() %}{% set ver = ver.replace("v", "").replace(".","") | int %}{% if num_ver < ver %}{% if print_header %}
-##### Bug fixes (`{{ version_installed }}` -> `{{ version_available }}`){% set print_header = False %}{% endif %}{% for fix in fixes %}
+{{ '- '+change }}{% endfor %}{% endif %}{% endfor %}{% endif %}{% endif %}
+{% set print_bugfix_header = True %}{% for ver, fixes in bugfixes.items() %}{% set ver = ver.replace("v", "").replace(".","") | int %}{% if num_ver < ver %}{% if print_bugfix_header %}
+##### Bug fixes (`{{ version_installed }}` -> `{{ version_available }}`){% set print_bugfix_header = False %}{% endif %}{% for fix in fixes %}
 {{ '- ' + fix }}{% endfor %}{% endif %}{% endfor %}
 
 ##### Features{% for ver, text in features.items() %}{% set feature_ver = ver.replace("v", "").replace(".", "") | int %}
@@ -137,4 +137,14 @@ mosoblgaz:
 
   # Custom invoice name format
   invoice_name: 'What {group} costs on {code}'
+```
+
+### Invert invoice values
+By default, invoice entities display overpayment in positive. If you would like it to show up another way (to display
+amount left to pay in positive), supply an `invert_invoice` key with `true` as value to your configuration:
+```yaml
+mosoblgaz:
+  ...
+  # Invert invoice values
+  invert_invoices: true
 ```

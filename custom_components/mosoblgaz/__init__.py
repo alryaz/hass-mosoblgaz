@@ -26,6 +26,7 @@ CONF_CONTRACT_NAME = "contract_name"
 CONF_METERS = "meters"
 CONF_INVOICES = "invoices"
 CONF_INVOICE_NAME = "invoice_name"
+CONF_INVERT_INVOICES = "invert_invoices"
 
 DOMAIN = 'mosoblgaz'
 DATA_CONFIG = DOMAIN + '_config'
@@ -38,6 +39,7 @@ DEFAULT_TIMEOUT = timedelta(seconds=5)
 DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {code}'
 DEFAULT_METER_NAME_FORMAT = 'MOG Meter {code}'
 DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {code}'
+DEFAULT_INVERT_INVOICES = False
 
 POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
 
@@ -51,6 +53,7 @@ CONFIG_SCHEMA = vol.Schema(
                     vol.Optional(CONF_INVOICES): cv.boolean,
                     vol.Optional(CONF_METERS): cv.boolean,
                 }))},
+                vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
                 vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
                 vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
                 vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): POSITIVE_PERIOD_SCHEMA,
