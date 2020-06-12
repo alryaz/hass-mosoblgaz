@@ -4,7 +4,7 @@ from homeassistant import config_entries
 from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_SCAN_INTERVAL
 
 from . import DOMAIN, CONF_METERS, CONF_INVOICES, AuthenticationFailedException, PartialOfflineException, \
-    CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL
+    CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DEFAULT_INVERT_INVOICES, CONF_INVERT_INVOICES
 from .mosoblgaz import MosoblgazException
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow):
         schema_user = OrderedDict()
         schema_user[vol.Required(CONF_USERNAME)] = str
         schema_user[vol.Required(CONF_PASSWORD)] = str
-        schema_user[vol.Optional(CONF_ADD_ALL_CONTRACTS)] = bool
+        schema_user[vol.Optional(CONF_ADD_ALL_CONTRACTS, default=True)] = bool
+        schema_user[vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES)] = bool
         schema_user[vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL.seconds)] = int
         self.schema_user = vol.Schema(schema_user)
 

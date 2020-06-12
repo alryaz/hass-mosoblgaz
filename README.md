@@ -70,7 +70,6 @@ mosoblgaz:
 ```
 
 ### Update only specific contracts
-
 ```yaml
 mosoblgaz:
   ...
@@ -120,4 +119,14 @@ mosoblgaz:
 
   # Custom invoice name format
   invoice_name: 'What {group} costs on {code}'
+```
+
+### Invert invoice values
+By default, invoice entities display overpayment in positive. If you would like it to show up another way (to display
+amount left to pay in positive), supply an `invert_invoice` key with `true` as value to your configuration:
+```yaml
+mosoblgaz:
+  ...
+  # Invert invoice values
+  invert_invoices: true
 ```
