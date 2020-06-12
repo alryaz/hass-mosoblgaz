@@ -5,7 +5,8 @@
 {% set mainline_num_ver = version_available.replace("v", "").replace(".", "") | int %}{%- set features = {
     'v0.0.1': 'Initial release, contracts / meters / invoices supported for reading',
 }-%}{%- set breaking_changes = {} -%}{%- set bugfixes = {
-    'v0.0.2': 'Fixed broken requests due to invalid offline statuses parsing'
+    'v0.0.2': 'Fixed broken requests due to invalid offline statuses parsing',
+    'v0.0.3': 'Fixed double polling for entities and a typo within code'
 } -%}
 {% if installed %}{% if version_installed == "master" %}
 #### ⚠ You are using development version
