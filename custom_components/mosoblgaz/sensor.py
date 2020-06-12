@@ -60,7 +60,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         _LOGGER.error('Error fetching contracts: %s' % e)
         return False
 
-    use_filter = CONF_CONTRACTS in user_cfg
+    use_filter = CONF_CONTRACTS in user_cfg and user_cfg[CONF_CONTRACTS]
 
     # Fetch custom name formats (or select defaults)
     contract_name_format = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
@@ -334,7 +334,7 @@ class MOGMeterSensor(MOGEntity):
 
 
 class MOGInvoiceSensor(MOGEntity):
-    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'], invoice_group: str, name_format: str):
+    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'], name_format: str):
         super().__init__()
 
         self._icon = 'mdi:receipt'
@@ -377,7 +377,7 @@ class MOGInvoiceSensor(MOGEntity):
                     prefix + 'payments_count': invoice.payments_count,
                 })
 
-        self._state = round(last_invoice.total - last_invoice.paid, 2)
+        self._state = round(last_invoice.total - last_invoice.paid - last_invoice.balance, 2)
         self._attributes = attributes
 
     @property

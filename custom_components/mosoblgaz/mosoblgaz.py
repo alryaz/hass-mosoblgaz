@@ -97,7 +97,7 @@ class Queries:
 
         return prefix + compiled_query
 
-    getInternalSystemStatuses = [('me', ['id'], 'internalSystemStatuses')]
+    getInternalSystemStatuses = [('me', ['id']), 'internalSystemStatuses']
     messagesCount = [
         ('messages', ['id', 'level', 'sticky', 'tag', 'text', 'type', 'textAsJsonArray']),
     ]
@@ -254,8 +254,12 @@ class MosoblgazAPI:
     def contracts(self) -> Dict[str, 'Contract']:
         return self._contracts
 
-    def check_statuses_response(self, statuses_response: Dict[str, Union[bool, str]], raise_for_statuses: bool = True,
+    @staticmethod
+    def check_statuses_response(statuses_response: Dict[str, Union[bool, str]], raise_for_statuses: bool = True,
                                 check_keys: Optional[Dict[str, Union[bool, str]]] = None, with_default: bool = True):
+        if 'internalSystemStatuses' in statuses_response:
+            statuses_response = statuses_response['internalSystemStatuses']
+
         statuses_keys = {
             # "apple_pay_enabled": True,
             "coffee_break": False,
@@ -274,7 +278,7 @@ class MosoblgazAPI:
             statuses_keys.update(check_keys)
 
         bad_statuses = [
-            "%s \u2260 %s" % (status_key, good_value)
+            "%s =/= %s" % (status_key, good_value)
             for status_key, good_value in statuses_keys.items()
             if statuses_response.get(status_key) != good_value
         ]
@@ -284,9 +288,9 @@ class MosoblgazAPI:
 
     async def fetch_contracts(self, with_data: bool = False, raise_for_statuses: bool = True) -> Dict[str, 'Contract']:
         statuses_query = Queries.query('getInternalSystemStatuses')
-        accounts_list_query = Queries.query('accountsList')
+        contracts_querymoso = Queries.query('accountsList')
 
-        response_list = await self.perform_queries([statuses_query, accounts_list_query])
+        response_list = await self.perform_queries([statuses_query, contracts_query])
         status_response, contracts_response = response_list
 
         self.check_statuses_response(status_response, raise_for_statuses=raise_for_statuses)
@@ -434,8 +438,8 @@ class Contract:
         return {i: d for i, d in self.devices.items() if isinstance(d, Meter)}
 
     async def update_data(self):
-        accounts_list_query = Queries.query('contractDevices')
-        response = await self.api.perform_single_query(accounts_list_query, {'number': self._contract_id})
+        contract_data_query = Queries.query('contractDevices')
+        response = await self.api.perform_single_query(contract_data_query, {'number': self._contract_id})
         self.data = response['me']['contract']
 
     # Data properties

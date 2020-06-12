@@ -4,7 +4,9 @@
 [![Donate PayPal](https://img.shields.io/badge/Donate-Paypal-blueviolet.svg)](https://www.paypal.me/alryaz)
 {% set mainline_num_ver = version_available.replace("v", "").replace(".", "") | int %}{%- set features = {
     'v0.0.1': 'Initial release, contracts / meters / invoices supported for reading',
-}-%}{%- set breaking_changes = {} -%}{%- set bugfixes = {} -%}
+}-%}{%- set breaking_changes = {} -%}{%- set bugfixes = {
+    'v0.0.2': 'Fixed broken requests due to invalid offline statuses parsing'
+} -%}
 {% if installed %}{% if version_installed == "master" %}
 #### ⚠ You are using development version
 This branch may be unstable, as it contains commits not tested beforehand.  
@@ -31,10 +33,16 @@ Please, report all issues to the [project's GitHub issues](https://github.com/al
 - {{ text }} _(supported since `{{ ver }}`)_{% endfor %}
 {% endif %}
 
-## !!! WARNING !!!
-Although indication submission is partially available in this version of the component, it is in no way
-secure or error-proof. Since more testing is required, and there are date restrictions in place,
-this feature will be complete by one of the next minor releases.
+## Screenshots
+### Contract sensor
+![Contract glance](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/account_glance.png)
+
+### Meter sensors
+![Meter glance](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png)
+
+### Invoice sensor
+![Invoice sensor](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png)
+
 
 ## Configuration
 ### Basic configuration example
@@ -72,7 +80,7 @@ mosoblgaz:
     # Disable contract completely
     5612341421: False
 
-    # Add only account and invoice sensors, but not meters.
+    # Add only contract and invoice sensors, but not meters.
     512124124:
       invoices: True
       meters: False
