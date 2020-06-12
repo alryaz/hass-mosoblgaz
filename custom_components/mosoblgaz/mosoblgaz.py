@@ -258,7 +258,7 @@ class MosoblgazAPI:
                                 check_keys: Optional[Dict[str, Union[bool, str]]] = None, with_default: bool = True):
         statuses_keys = {
             # "apple_pay_enabled": True,
-            "coffee_break": True,
+            "coffee_break": False,
             # "google_pay_enabled": True,
             # "pps_tech_coffee_break": True,
             # "pps_tech_request_coffee_break": True,
