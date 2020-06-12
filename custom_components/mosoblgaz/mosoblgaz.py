@@ -288,7 +288,7 @@ class MosoblgazAPI:
 
     async def fetch_contracts(self, with_data: bool = False, raise_for_statuses: bool = True) -> Dict[str, 'Contract']:
         statuses_query = Queries.query('getInternalSystemStatuses')
-        contracts_querymoso = Queries.query('accountsList')
+        contracts_query = Queries.query('accountsList')
 
         response_list = await self.perform_queries([statuses_query, contracts_query])
         status_response, contracts_response = response_list

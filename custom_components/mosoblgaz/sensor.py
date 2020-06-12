@@ -285,6 +285,11 @@ class MOGContractSensor(MOGEntity):
         """Return the unique ID of the sensor"""
         return 'ls_' + str(self.contract.contract_id)
 
+    @property
+    def should_poll(self) -> bool:
+        """Return whether the entity should be polled or not"""
+        return False
+
 
 class MOGMeterSensor(MOGEntity):
     """The class for this sensor"""
