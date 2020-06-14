@@ -1,129 +1,146 @@
-# HomeAssistant Mosoblgaz sensors
-> Provide information about current state of your Mosoblgaz contracts.
+[<img src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/header.png" height="100">](https://mosoblgaz.ru/)
+# _Мособлгаз_ для HomeAssistant
+> Предоставление информации о текущем состоянии ваших контрактов с Мособлгаз.
 >
 >[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
->[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
->[![Maintenance](https://img.shields.io/badge/Maintained%3F-yes-green.svg)](https://github.com/alryaz/hass-mosoblgaz/graphs/commit-activity)
->[![Donate Yandex](https://img.shields.io/badge/Donate-Yandex-red.svg)](https://money.yandex.ru/to/410012369233217)
->[![Donate PayPal](https://img.shields.io/badge/Donate-Paypal-blueviolet.svg)](https://www.paypal.me/alryaz)
+>[![Лицензия](https://img.shields.io/badge/%D0%9B%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+>[![Поддержка](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B8%D0%B2%D0%B0%D0%B5%D1%82%D1%81%D1%8F%3F-%D0%B4%D0%B0-green.svg)](https://github.com/alryaz/hass-mosoblgaz/graphs/commit-activity)
+>
+>[![Пожертвование Yandex](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B6%D0%B5%D1%80%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-Yandex-red.svg)](https://money.yandex.ru/to/410012369233217)
+>[![Пожертвование PayPal](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B6%D0%B5%D1%80%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-Paypal-blueviolet.svg)](https://www.paypal.me/alryaz)
 
-This custom component provides Mosoblgaz API polling capabilities to HomeAssistant.
+Данная интеграция предоставляет возможность системе HomeAssistant опрашивать API Мособлгаза.
 
-## Screenshots
-### Contract sensor
-![Contract glance](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/contract_glance.png)
+## Скриншоты
+[<img alt="Лицевой счёт" src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/contract_glance.png" height="240">](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/contract_glance.png)
+[<img alt="Счётчик МОГ" src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png" height="240">](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png)
+[<img alt="Квитанция" src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png" height="240">](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png)
 
-### Meter sensors
-![Meter glance](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png)
+## Установка
+### Посредством HACS
+1. Откройте HACS (через `Extensions` в боковой панели)
+1. Добавьте новый произвольный репозиторий:
+   1. Выберите `Integration` (`Интеграция`) в качестве типа репозитория
+   1. Введите ссылку на репозиторий: `https://github.com/alryaz/hass-mosoblgaz`
+   1. Нажмите кнопку `Add` (`Добавить`)
+   1. Дождитесь добавления репозитория (занимает до 10 секунд)
+   1. Теперь вы должны видеть доступную интеграцию `Mosoblgaz (Мособлгаз)` в списке новых интеграций.
+1. Нажмите кнопку `Install` чтобы увидеть доступные версии
+1. Установите последнюю версию нажатием кнопки `Install`
+1. Перезапустите HomeAssistant
 
-### Invoice sensor
-![Invoice sensor](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png)
+_Примечание:_ Не рекомендуется устанавливать ветку `master`. Она используется исключительно для разработки. 
 
-## Installation
-### Via HACS
-1. Open HACS (via `Extensions` in the sidebar)
-1. Add a new custom repository:
-   1. Select `Integration` as custom repository type
-   1. Enter custom repository URL: `https://github.com/alryaz/hass-mosoblgaz`
-   1. Press `Add` button
-   1. Wait until repository gets added 
-   1. You should now see `Mosoblgaz (Мособлгаз)` integration available in the list of newly added integrations
-1. Click `Install` button to view available versions
-1. Install latest version by pressing `Install`
-
-_NOTE:_ It is not recommended to install `master` branch. It is intended for development only. 
-
-### Manually
-Clone the repository to a temporary directory, then create a `custom_components` directory inside your HomeAssistant
-config folder (if it doesn't exist yet). Then, move `Mosoblgaz` folder from `custom_components` folder of
-the repository to the `custom_components` folder inside your HomeAssistant configuration.  
-An example (assuming HomeAssistant configuration is available at `/mnt/homeassistant/config`) for Unix-based
-systems is available below:
+### Вручную
+Клонируйте репозиторий во временный каталог, затем создайте каталог `custom_components` внутри папки конфигурации
+вашего HomeAssistant (если она еще не существует). Затем переместите папку `mosoblgaz` из папки `custom_components` 
+репозитория в папку `custom_components` внутри папки конфигурации HomeAssistant.
+Пример (при условии, что конфигурация HomeAssistant доступна по адресу `/mnt/homeassistant/config`) для Unix-систем:
 ```
 git clone https://github.com/alryaz/hass-mosoblgaz.git hass-mosoblgaz
 mkdir -p /mnt/homeassistant/config/custom_components
 mv hass-mosoblgaz/custom_components/mosoblgaz /mnt/homeassistant/config/custom_components
 ```
 
-## Configuration
-### Basic configuration example
+## Конфигурация
+### Через интерфейс HomeAssistant
+1. Откройте `Настройки` -> `Интеграции`
+1. Нажмите внизу справа страницы кнопку с плюсом
+1. Введите в поле поиска `Mosoblgaz` или `Мособлгаз`
+   1. Если по какой-то причине интеграция не была найдена, убедитесь, что HomeAssistant был перезапущен после установки интеграции.
+1. Выберите первый результат из списка
+1. Введите данные вашей учётной записи для ЛК _"Мособлгаз"_
+1. Нажмите кнопку `Продолжить`
+1. Через несколько секунд начнётся обновление; проверяйте список ваших объектов на наличие
+   объектов, чьи названия начинаются на `MOG`.
+   
+### Через `configuration.yaml`
+#### Базовая конфигурация
+Для настройки данной интеграции потребуются данные авторизации в ЛК Мособлгаз.  
+`username` - Имя пользователя (телефон / адрес эл. почты)  
+`password` - Пароль
 ```yaml
 mosoblgaz:
   username: !secret mosoblgaz_username
   password: !secret mosoblgaz_password
 ```
 
-### Multiple users
+#### Несколько пользователей
+Возможно добавить несколько пользователей.
+Для этого вводите данные, используя пример ниже:
 ```yaml
 mosoblgaz:
-    # First user
+    # Первый пользователь
   - username: !secret first_mosoblgaz_username
     password: !secret first_mosoblgaz_password
 
-    # Second user
+    # Второй пользователь
   - username: !secret second_mosoblgaz_username
     password: !secret second_mosoblgaz_password
 
-    # Third user
+    # Третий пользователь
   - username: !secret third_mosoblgaz_username
     password: !secret third_mosoblgaz_password 
 ```
 
-### Update only specific contracts
+#### Обновление конкретных контрактов
 ```yaml
 mosoblgaz:
   ...
   contracts:
-    # Update every part of the contract (including meters, invoices, and what's to come)
-    135112512: True
+    # Обновлять всё связанное с контрактом (счётчики, квитанции, и т.д.)
+    135112512: true
     
-    # Disable contract completely
-    5612341421: False
+    # Отключить добавление контракта
+    5612341421: false
 
-    # Add only account and invoice sensors, but not meters.
+    # Добавлять только квитанции, отключить счётчики
     512124124:
       invoices: True
       meters: False
 ```
 
-### Change update schedule
-Default `scan_interval`: 1 hour  
+#### Изменение интервалов обновления
+Частота обновления данных (`scan_interval`) по умолчанию: 1 час  
 ```yaml
 mosoblgaz:
   ...
-  # Interval for entity updates
+  # Интервал обновления данных
   scan_interval:
     hours: 6
+    seconds: 3
+    minutes: 1
+    ...
 
-  # ... also possible to set via seconds
+  # ... также возможно задать секундами
   scan_interval: 21600
 ```
 
-### Custom names for entities
-Currently, naming entities supports basic formatting based on python `str.format(...)` method. Changing
-these parameters (assuming setup without explicit overrides via *Customize* interface or alike) will have effect both on entity IDs and friendly names.
-  
-Supported replacements are: `code`, `group` (only for invoices)
+#### Настройка имён объектов
+На данный момент, именование объектов происходит используя метод `str.format(...)` языка Python. Изменение следующих
+параметров влияет на ID создаваемых объектов и их имена.
 
-Default `contract_name`: `MOG Contract {code}` (ex.: `MOG Contract 214651241`)  
-Default `meter_name`: `MOG Meter {code}` (ex. `MOG Meter 214651241`)  
-Default `invoice_name`: `MES {group} Invoice {code}` (ex. `MOG Gas Invoice 214651241`)
+Поддерживаемые замены: `group` (только для квитанций), `code`
+
+Формат контракта (`contract_name`) по умолчанию: `MOG Contract {code}`  
+Формат счётчика (`meter_name`) по умолчанию: `MOG Meter {code}`  
+Формат квитанции (`invoice_name`) по умолчанию: `MOG {group} Invoice {code}`
 ```yaml
 mosoblgaz:
   ...
-  # Custom contract name format
-  contract_name: 'My super {code} contract'
+  # Произвольный формат для контрактов
+  contract_name: 'Мой супер {code} контракт' 
 
-  # Custom meter name format
-  meter_name: 'Ultimate {code} gasification'
+  # Произвольный формат для счётчиков
+  meter_name: 'Счётчик {code} шипит'
 
-  # Custom invoice name format
-  invoice_name: 'What {group} costs on {code}'
+  # Произвольный формат для квитанций
+  meter_name: 'За {group} по {code} платим мало!'
 ```
 
-### Invert invoice values
-By default, invoice entities display overpayment in positive. If you would like it to show up another way (to display
-amount left to pay in positive), supply an `invert_invoice` key with `true` as value to your configuration:
+#### Инвертирование значений квитанций
+По умолчанию, квитанции отображают переплату в положительных числах. Если имеется желание обратить данное поведение,
+(задолженность будеть показана положительной), укажите ключ `invert_invoices` со значением `true` в конфигурации:
 ```yaml
 mosoblgaz:
   ...
