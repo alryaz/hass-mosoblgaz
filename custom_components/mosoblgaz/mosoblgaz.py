@@ -622,7 +622,9 @@ class HistoryEntry:
 
     @property
     def delta(self) -> int:
-        return int(self._data['M3'])
+        if 'M3' in self._data:
+            return int(self._data['M3'])
+        return self.new_value - self.previous_value
 
     @property
     def previous_value(self) -> int:

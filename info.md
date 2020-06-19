@@ -10,6 +10,8 @@
 } -%}{%- set bugfixes = {
     'v0.0.2': ['Fixed broken requests due to invalid offline statuses parsing'],
     'v0.0.3': ['Fixed double polling for entities and a typo within code'],
+    'v0.0.5': ['Исправлена редкая ошибка с необычной отдачей данных',
+               'Превентивно исправлено неправильное отображение атрибутов'],
 } -%}
 {% if installed %}{% if version_installed == "master" %}
 #### ⚠ You are using development version

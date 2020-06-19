@@ -238,6 +238,8 @@ class MOGEntity(Entity):
     @property
     def device_state_attributes(self):
         """Return the attribute(s) of the sensor"""
+        if self._attributes is None:
+            return None
         return {**self._attributes, ATTR_ATTRIBUTION: ATTRIBUTION}
 
     @property
