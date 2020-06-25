@@ -61,7 +61,26 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         _LOGGER.error('Error fetching contracts: %s' % e)
         return False
 
-    use_filter = CONF_CONTRACTS in user_cfg and user_cfg[CONF_CONTRACTS]
+    print(user_cfg)
+
+    use_filter = user_cfg.get(CONF_CONTRACTS)
+    print(use_filter, bool(use_filter))
+    add_strategy = None
+    if use_filter:
+        filter_values = use_filter.values()
+        if False in filter_values:
+            # Enable blacklist strategy
+            add_strategy = False
+        elif True in filter_values:
+            # Enable whitelist strategy
+            add_strategy = True
+
+    print(add_strategy)
+
+    _LOGGER.debug('Using %s strategy for entity iteration on username %s'
+                  % ('whitelist' if add_strategy is True
+                     else 'blacklist' if add_strategy is False
+                     else 'modify', username))
 
     # Fetch custom name formats (or select defaults)
     contract_name_format = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
@@ -79,10 +98,17 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
 
     tasks = []
     for contract_id, contract in contracts.items():
-        if use_filter and contract_id not in user_cfg[CONF_CONTRACTS].keys():
-            _LOGGER.debug('Not setting up contract %s due to configuration exclusion for username %s'
-                          % (contract_id, username))
-            continue
+        add_meters, add_invoices = True, True
+        if use_filter:
+            contract_conf = user_cfg[CONF_CONTRACTS].get(contract_id)
+            if isinstance(contract_conf, dict):
+                add_meters = contract_conf[CONF_METERS]
+                add_invoices = contract_conf[CONF_INVOICES]
+            elif add_strategy is False and contract_conf is False \
+                    or add_strategy is True and contract_conf is None:
+                _LOGGER.debug('Not setting up contract %s due to configuration exclusion for username %s'
+                              % (contract_id, username))
+                continue
 
         _LOGGER.debug('Setting up contract %s for username %s' % (contract_id, username))
 
@@ -96,7 +122,8 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
             contract_entity.async_schedule_update_ha_state(force_refresh=True)
 
         # Process meters
-        if not use_filter or user_cfg[CONF_CONTRACTS][contract_id].get(CONF_METERS, True):
+        if add_meters:
+            _LOGGER.debug('Will be updating meters for %s on username %s' % (contract_id, username))
             meters = contract.meters
 
             if contract_entity.meter_entities is None:
@@ -122,9 +149,12 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                 else:
                     meter_entity.meter = meter
                     meter_entity.async_schedule_update_ha_state(force_refresh=True)
+        else:
+            _LOGGER.debug('Not setting up meters for %s on username %s' % (contract_id, username))
 
         # Process last and previous invoices
-        if not use_filter or user_cfg[CONF_CONTRACTS][contract_id].get(CONF_INVOICES, True):
+        if add_invoices:
+            _LOGGER.debug('Will be updating invoices for %s on username %s' % (contract_id, username))
             invert_invoices = user_cfg[CONF_INVERT_INVOICES]
             for group, invoices in contract.all_invoices_by_groups.items():
                 if invoices:
@@ -143,6 +173,8 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                         new_invoices[(contract.contract_id, group)] = invoice_entity
                         contract_entity.invoice_entities[group] = invoice_entity
                         tasks.append(invoice_entity.async_update())
+        else:
+            _LOGGER.debug('Not setting up invoices for %s on username %s' % (contract_id, username))
 
     if tasks:
         await asyncio.wait(tasks)

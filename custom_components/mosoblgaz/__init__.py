@@ -1,7 +1,7 @@
 """Mosoblgaz API"""
 import logging
 from datetime import timedelta
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, Dict, Union
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -40,8 +40,22 @@ DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {code}'
 DEFAULT_METER_NAME_FORMAT = 'MOG Meter {code}'
 DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {code}'
 DEFAULT_INVERT_INVOICES = False
+DEFAULT_ADD_INVOICES = True
+DEFAULT_ADD_METERS = True
 
 POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
+
+
+def filter_strategies(value: Dict[str, Union[bool, Dict[str, bool]]]) -> Dict[str, Union[bool, Dict[str, bool]]]:
+    if False in value.values():
+        # Blacklist strategy / Стратегия чёрного списка
+        return {
+            contract_id: setting
+            for contract_id, setting in value.items()
+            if setting is not True
+        }
+    return value
+
 
 CONFIG_SCHEMA = vol.Schema(
     {
@@ -49,10 +63,10 @@ CONFIG_SCHEMA = vol.Schema(
             {
                 vol.Required(CONF_USERNAME): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
-                vol.Optional(CONF_CONTRACTS, default={}): {cv.string: vol.Any(cv.boolean, vol.Schema({
-                    vol.Optional(CONF_INVOICES): cv.boolean,
-                    vol.Optional(CONF_METERS): cv.boolean,
-                }))},
+                vol.Optional(CONF_CONTRACTS): vol.All({cv.string: vol.Any(cv.boolean, vol.Schema({
+                    vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
+                    vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
+                }))}, filter_strategies),
                 vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
                 vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
                 vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
