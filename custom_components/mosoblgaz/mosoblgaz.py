@@ -3,7 +3,8 @@ import json
 import logging
 import re
 from datetime import date, datetime, timedelta
-from typing import Optional, Any, Dict, Tuple, Union, List, Set
+from types import MappingProxyType
+from typing import Optional, Any, Dict, Tuple, Union, List, Set, Mapping
 
 import aiohttp
 from dateutil.tz import gettz, tz
@@ -12,7 +13,7 @@ _LOGGER = logging.getLogger(__name__)
 
 HistoryEntryDataType = Dict[str, Union[str, Dict[str, int]]]
 DeviceDataType = Dict[str, Any]
-InvoiceDataType = Dict[str, Optional[Union[str, Dict[str, Union[str, int]]]]]
+InvoiceDataType = Mapping[str, Any]
 
 
 def convert_date_dict(date_dict: Dict[str, Union[str, int]]) -> datetime:
@@ -644,7 +645,7 @@ class Invoice:
         self._contract = contract
         self._group = group
         self._period = date(*period, 1)
-        self._payments: Optional[List[Payment]] = None
+        self._payments: Optional[List[Payment]] = []
         self.data = data
 
     @property
@@ -657,46 +658,60 @@ class Invoice:
 
     @property
     def data(self) -> InvoiceDataType:
-        return self._data
+        """Invoice data getter"""
+        return MappingProxyType(self._data)
 
     @data.setter
     def data(self, value: InvoiceDataType) -> None:
-        if self._payments is None:
-            self._payments = []
-        else:
-            self._payments.clear()
+        """Invoice data setter"""
+        if value is None:
+            raise ValueError('data value cannot be empty')
 
-        for payment_data in value['payments']:
-            self._payments.append(Payment(payment_data))
+        self._payments.clear()
+
+        payments = value.get('payments')
+        if payments:
+            for payment_data in payments:
+                self._payments.append(Payment(payment_data))
 
         self._data = value
 
     @property
-    def period(self) -> date:
-        return self._period
-
-    @property
     def balance(self) -> float:
+        """Balance at the moment of invoice issue"""
         return float(self._data['balance'])
 
     @property
-    def paid(self) -> float:
-        return float(self._data['payment'])
-
-    @property
-    def payments_count(self) -> int:
-        return len(self._data['payments'])
+    def paid(self) -> Optional[float]:
+        """Paid amount (if available)"""
+        return float(self._data['payment']) if 'payment' in self._data \
+            else None
 
     @property
     def payments(self) -> List['Payment']:
+        """List of payments"""
         return self._payments
 
     @property
-    def total(self) -> float:
-        return float(self._data['invoice'])
+    def payments_count(self) -> int:
+        """Payments amount"""
+        return len(self._payments)
+
+    @property
+    def period(self) -> date:
+        """Invoice period"""
+        return self._period
+
+    @property
+    def total(self) -> Optional[float]:
+        """Invoice total"""
+        return float(self._data['invoice']) if 'invoice' in self._data \
+            else None
 
 
 class Payment:
+    """Payment class"""
+    # @TODO: add more properties
     def __init__(self, data: Dict[str, Any]):
         self._data = data
 
