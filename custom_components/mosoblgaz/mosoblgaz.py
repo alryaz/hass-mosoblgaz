@@ -679,13 +679,13 @@ class Invoice:
     @property
     def balance(self) -> float:
         """Balance at the moment of invoice issue"""
-        return float(self._data['balance'])
+        return float(self._data.get('balance', 0))
 
     @property
     def paid(self) -> Optional[float]:
         """Paid amount (if available)"""
-        return float(self._data['payment']) if 'payment' in self._data \
-            else None
+        value = self._data.get('paid')
+        return None if value is None else float(value)
 
     @property
     def payments(self) -> List['Payment']:
@@ -705,8 +705,8 @@ class Invoice:
     @property
     def total(self) -> Optional[float]:
         """Invoice total"""
-        return float(self._data['invoice']) if 'invoice' in self._data \
-            else None
+        value = self._data.get('invoice')
+        return None if value is None else float(value)
 
 
 class Payment:
