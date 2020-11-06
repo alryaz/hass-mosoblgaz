@@ -25,11 +25,36 @@ from .mosoblgaz import MosoblgazAPI, MosoblgazException, Meter, Invoice, Contrac
 
 _LOGGER = logging.getLogger(__name__)
 
+ATTRIBUTION = "Data provided by Mosoblgaz"
+RUB_CURRENCY = "руб."
+
 ENTITIES_CONTRACT = 'contract'
 ENTITIES_METER_TARIFF = 'meter_tariff'
 
 ATTR_INDICATIONS = "indications"
 ATTR_IGNORE_PERIOD = "ignore_period"
+
+ATTR_CONTRACT_CODE = "contract_code"
+ATTR_METER_CODE = "meter_code"
+
+ATTR_SERIAL = "serial"
+
+ATTR_ADDRESS = "address"
+ATTR_PERSON = "person"
+ATTR_DEPARTMENT = "department"
+
+ATTR_COLLECTED_AT = "collected_at"
+ATTR_LAST_VALUE = "last_value"
+ATTR_LAST_COST = "last_cost"
+ATTR_LAST_CHARGED = "last_charged"
+ATTR_PREVIOUS_VALUE = "previous_value"
+
+ATTR_INVOICE_GROUP = "invoice_group"
+ATTR_PERIOD = "period"
+ATTR_TOTAL = "total"
+ATTR_PAID = "paid"
+ATTR_BALANCE = "balance"
+ATTR_PAYMENTS_COUNT = "payments_count"
 
 DEFAULT_MAX_INDICATIONS = 3
 INDICATIONS_SCHEMA = vol.Any(
@@ -99,11 +124,13 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
     tasks = []
     for contract_id, contract in contracts.items():
         add_meters, add_invoices = True, True
+
         if use_filter:
             contract_conf = user_cfg[CONF_CONTRACTS].get(contract_id)
             if isinstance(contract_conf, dict):
-                add_meters = contract_conf[CONF_METERS]
-                add_invoices = contract_conf[CONF_INVOICES]
+                add_meters = contract_conf.get(CONF_METERS, add_meters)
+                add_invoices = contract_conf.get(CONF_INVOICES, add_invoices)
+
             elif add_strategy is False and contract_conf is False \
                     or add_strategy is True and contract_conf is None:
                 _LOGGER.debug('Not setting up contract %s due to configuration exclusion for username %s'
@@ -244,8 +271,6 @@ async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, asyn
     """Set up the sensor platform"""
     return False
 
-ATTRIBUTION = "Data provided by Mosoblgaz"
-
 
 class MOGEntity(Entity):
     def __init__(self):
@@ -299,14 +324,14 @@ class MOGContractSensor(MOGEntity):
     async def async_update(self):
         """The update method"""
         attributes = {
-            'contract_code': self.contract.contract_id,
-            'address': self.contract.address,
-            'person': self.contract.person,
-            'department': self.contract.department_title,
+            ATTR_CONTRACT_CODE: self.contract.contract_id,
+            ATTR_ADDRESS: self.contract.address,
+            ATTR_PERSON: self.contract.person,
+            ATTR_DEPARTMENT: self.contract.department_title,
         }
 
         self._state = self.contract.balance
-        self._unit = 'руб.'
+        self._unit = RUB_CURRENCY
 
         self._attributes = attributes
         _LOGGER.debug('Update for contract %s finished' % self)
@@ -335,23 +360,23 @@ class MOGMeterSensor(MOGEntity):
     async def async_update(self):
         """The update method"""
         attributes = {
-            'contract_code': self.meter.contract.contract_id,
-            'meter_code': self.meter.device_id,
+            ATTR_CONTRACT_CODE: self.meter.contract.contract_id,
+            ATTR_METER_CODE: self.meter.device_id,
         }
 
         if self.meter.serial:
-            attributes['serial'] = self.meter.serial
+            attributes[ATTR_SERIAL] = self.meter.serial
 
         meter_status = 0
 
         history_entry = self.meter.last_history_entry
         if history_entry:
             attributes.update({
-                'collected_at': history_entry.collected_at.isoformat(),
-                'last_value': history_entry.new_value,
-                'last_cost': history_entry.cost,
-                'last_charged': history_entry.charged,
-                'previous_value': history_entry.previous_value,
+                ATTR_COLLECTED_AT: history_entry.collected_at.isoformat(),
+                ATTR_LAST_VALUE: history_entry.new_value,
+                ATTR_LAST_COST: history_entry.cost,
+                ATTR_LAST_CHARGED: history_entry.charged,
+                ATTR_PREVIOUS_VALUE: history_entry.previous_value,
             })
             meter_status = history_entry.new_value
 
@@ -402,18 +427,18 @@ class MOGInvoiceSensor(MOGEntity):
         """The update method"""
         last_invoice = self.last_invoice
         attributes = {
-            'contract_code': last_invoice.contract.contract_id,
-            'invoice_group': last_invoice.group,
+            ATTR_CONTRACT_CODE: last_invoice.contract.contract_id,
+            ATTR_INVOICE_GROUP: last_invoice.group,
         }
 
         for prefix, invoice in {'': last_invoice, 'previous_': self.previous_invoice}.items():
             if invoice:
                 attributes.update({
-                    prefix + 'period': invoice.period.isoformat(),
-                    prefix + 'total': invoice.total,
-                    prefix + 'paid': invoice.paid,
-                    prefix + 'balance': invoice.balance,
-                    prefix + 'payments_count': invoice.payments_count,
+                    prefix + ATTR_PERIOD: invoice.period.isoformat(),
+                    prefix + ATTR_TOTAL: invoice.total,
+                    prefix + ATTR_PAID: invoice.paid,
+                    prefix + ATTR_BALANCE: invoice.balance,
+                    prefix + ATTR_PAYMENTS_COUNT: invoice.payments_count,
                 })
 
         state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
