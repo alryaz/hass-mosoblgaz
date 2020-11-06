@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Dict, Optional, Tuple, Union, List
+from typing import Dict, Optional, Tuple, Union, List, Any
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -20,7 +20,8 @@ from homeassistant.helpers.typing import HomeAssistantType, ConfigType
 from . import DATA_CONFIG, CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DATA_API_OBJECTS, DATA_ENTITIES, DATA_UPDATERS, \
     DEFAULT_METER_NAME_FORMAT, CONF_METER_NAME, CONF_CONTRACT_NAME, \
     DEFAULT_CONTRACT_NAME_FORMAT, CONF_INVOICES, DEFAULT_INVOICE_NAME_FORMAT, CONF_INVOICE_NAME, CONF_METERS, \
-    CONF_INVERT_INVOICES
+    CONF_INVERT_INVOICES, DEFAULT_ADD_INVOICES, DEFAULT_ADD_METERS, DEFAULT_ADD_CONTRACTS, DEFAULT_PRIVACY_LOGGING, \
+    CONF_PRIVACY_LOGGING
 from .mosoblgaz import MosoblgazAPI, MosoblgazException, Meter, Invoice, Contract, PartialOfflineException
 
 _LOGGER = logging.getLogger(__name__)
@@ -63,6 +64,15 @@ INDICATIONS_SCHEMA = vol.Any(
 )
 
 
+def privacy_formatter(value: Any) -> str:
+    str_value = str(value)
+    if len(str_value) <= 2:
+        return str_value
+
+    suffix = str_value[:-max(2, int(round(0.2, len(str_value))))]
+    return '*' * (len(str_value)-len(suffix)) + suffix
+
+
 async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: ConfigType, async_add_entities,
                           now: Optional[datetime] = None) -> Union[bool, Tuple[int, int, int]]:
     username = user_cfg[CONF_USERNAME]
@@ -86,31 +96,19 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         _LOGGER.error('Error fetching contracts: %s' % e)
         return False
 
-    print(user_cfg)
-
-    use_filter = user_cfg.get(CONF_CONTRACTS)
-    print(use_filter, bool(use_filter))
-    add_strategy = None
-    if use_filter:
-        filter_values = use_filter.values()
-        if False in filter_values:
-            # Enable blacklist strategy
-            add_strategy = False
-        else:
-            # Enable whitelist strategy
-            add_strategy = True
-
-    print(add_strategy)
-
-    _LOGGER.debug('Using %s strategy for entity iteration on username %s'
-                  % ('whitelist' if add_strategy is True
-                     else 'blacklist' if add_strategy is False
-                     else 'modify', username))
+    use_contracts_filter = user_cfg.get(CONF_CONTRACTS)
 
     # Fetch custom name formats (or select defaults)
     contract_name_format = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
     meter_name_format = user_cfg.get(CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT)
     invoice_name_format = user_cfg.get(CONF_INVOICE_NAME, DEFAULT_INVOICE_NAME_FORMAT)
+
+    # Fetch default filter configuration
+    default_add_meters = user_cfg.get(CONF_METERS, DEFAULT_ADD_METERS)
+    default_add_invoices = user_cfg.get(CONF_INVOICES, DEFAULT_ADD_INVOICES)
+
+    # Privacy logging configuration
+    privacy_logging_enabled = user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
 
     created_entities = hass.data.setdefault(DATA_ENTITIES, {}).get(entry_id)
     if created_entities is None:
@@ -123,21 +121,23 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
 
     tasks = []
     for contract_id, contract in contracts.items():
-        add_meters, add_invoices = True, True
+        log_ext = (contract_id, username)
+        if privacy_logging_enabled:
+            log_ext = tuple(map(privacy_formatter, log_ext))
 
-        if use_filter:
-            contract_conf = user_cfg[CONF_CONTRACTS].get(contract_id)
-            if isinstance(contract_conf, dict):
+        add_meters, add_invoices = default_add_meters, default_add_invoices
+
+        if use_contracts_filter:
+            contract_conf = user_cfg[CONF_CONTRACTS].get(contract_id, DEFAULT_ADD_CONTRACTS)
+
+            if contract_conf is False:
+                _LOGGER.info('Not setting up contract %s on username %s' % log_ext)
+                continue
+            elif contract_conf is not False:
                 add_meters = contract_conf.get(CONF_METERS, add_meters)
                 add_invoices = contract_conf.get(CONF_INVOICES, add_invoices)
 
-            elif add_strategy is False and contract_conf is False \
-                    or add_strategy is True and contract_conf is None:
-                _LOGGER.debug('Not setting up contract %s due to configuration exclusion for username %s'
-                              % (contract_id, username))
-                continue
-
-        _LOGGER.debug('Setting up contract %s for username %s' % (contract_id, username))
+        _LOGGER.debug('Setting up contract %s on username %s' % log_ext)
 
         contract_entity = created_entities.get(contract_id)
         if contract_entity is None:
@@ -177,11 +177,11 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                     meter_entity.meter = meter
                     meter_entity.async_schedule_update_ha_state(force_refresh=True)
         else:
-            _LOGGER.debug('Not setting up meters for %s on username %s' % (contract_id, username))
+            _LOGGER.debug('Not setting up meters for %s on username %s' % log_ext)
 
         # Process last and previous invoices
         if add_invoices:
-            _LOGGER.debug('Will be updating invoices for %s on username %s' % (contract_id, username))
+            _LOGGER.debug('Will be updating invoices for %s on username %s' % log_ext)
             invert_invoices = user_cfg[CONF_INVERT_INVOICES]
             for group, invoices in contract.all_invoices_by_groups.items():
                 if invoices:
@@ -201,7 +201,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                         contract_entity.invoice_entities[group] = invoice_entity
                         tasks.append(invoice_entity.async_update())
         else:
-            _LOGGER.debug('Not setting up invoices for %s on username %s' % (contract_id, username))
+            _LOGGER.debug('Not setting up invoices for %s on username %s' % log_ext)
 
     if tasks:
         await asyncio.wait(tasks)
@@ -339,7 +339,10 @@ class MOGContractSensor(MOGEntity):
     @property
     def name(self):
         """Return the name of the sensor"""
-        return self._name_format.format(code=self.contract.contract_id, department=self.contract.department_title)
+        return self._name_format.format(
+            code=self.contract.contract_id,
+            department=self.contract.department_title
+        )
 
     @property
     def unique_id(self):
@@ -397,12 +400,17 @@ class MOGMeterSensor(MOGEntity):
 
 
 class MOGInvoiceSensor(MOGEntity):
-    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'], name_format: str, invert_state: bool = False):
+    FRIENDLY_GROUP_NAMES = {
+        'vkgo': 'VKGO',
+    }
+
+    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'],
+                 name_format: str, invert_state: bool = False):
         super().__init__()
 
         self._invert_state = invert_state
         self._icon = 'mdi:receipt'
-        self._unit = 'руб.'
+        self._unit = RUB_CURRENCY
         self._name_format = name_format
         self.invoices = invoices
 
@@ -457,22 +465,22 @@ class MOGInvoiceSensor(MOGEntity):
         _LOGGER.debug('Update for invoice %s finished' % self)
 
     @property
-    def friendly_group_name(self):
-        group = self.last_invoice.group
-        if group == 'vkgo':
-            return 'VKGO'
-        return group.capitalize()
-
-    @property
-    def contract_id(self):
-        return self.last_invoice.contract.contract_id
-
-    @property
     def name(self):
         """Return the name of the sensor"""
-        return self._name_format.format(code=self.contract_id, group=self.friendly_group_name)
+        last_invoice = self.last_invoice
+        group_code = last_invoice.group
+        group_name = self.FRIENDLY_GROUP_NAMES.get(group_code)
+        if group_name is None:
+            group_name = group_code.replace('_', ' ').capitalize()
+
+        return self._name_format.format(
+            code=last_invoice.contract.contract_id,
+            group=group_name,
+            group_code=group_code
+        )
 
     @property
     def unique_id(self):
         """Return the unique ID of the sensor"""
-        return 'invoice_' + str(self.contract_id)
+        last_invoice = self.last_invoice
+        return 'invoice_' + str(last_invoice.contract.contract_id) + '_' + str(last_invoice.group)

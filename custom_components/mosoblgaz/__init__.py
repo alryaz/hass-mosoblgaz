@@ -27,6 +27,7 @@ CONF_METERS = "meters"
 CONF_INVOICES = "invoices"
 CONF_INVOICE_NAME = "invoice_name"
 CONF_INVERT_INVOICES = "invert_invoices"
+CONF_PRIVACY_LOGGING = "privacy_logging"
 
 DOMAIN = 'mosoblgaz'
 DATA_CONFIG = DOMAIN + '_config'
@@ -40,9 +41,10 @@ DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {code}'
 DEFAULT_METER_NAME_FORMAT = 'MOG Meter {code}'
 DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {code}'
 DEFAULT_INVERT_INVOICES = False
+DEFAULT_ADD_CONTRACTS = True
 DEFAULT_ADD_INVOICES = True
 DEFAULT_ADD_METERS = True
-DEFAULT_WHITELIST = False
+DEFAULT_PRIVACY_LOGGING = False
 
 POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
 
@@ -58,22 +60,39 @@ def filter_strategies(value: Dict[str, Union[bool, Dict[str, bool]]]) -> Dict[st
     return value
 
 
+NAME_FORMATS_SUBCONFIG = {
+    vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
+    vol.Optional(CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT): cv.string,
+    vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
+}
+
+DEFAULT_FILTER_SUBCONFIG = {
+    vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
+    vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
+}
+
+FILTER_SUBCONFIG = {
+    **DEFAULT_FILTER_SUBCONFIG,
+    vol.Optional(CONF_CONTRACTS): vol.Optional({
+        cv.string: vol.Any(
+            vol.Optional(cv.boolean, default=DEFAULT_ADD_CONTRACTS),
+            vol.Schema(DEFAULT_FILTER_SUBCONFIG),
+        ),
+    }),
+}
+
 CONFIG_SCHEMA = vol.Schema(
     {
         DOMAIN: vol.All(cv.ensure_list, [vol.Schema(
             {
+                vol.Optional(CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING): cv.boolean,
                 vol.Required(CONF_USERNAME): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
-                vol.Optional(CONF_CONTRACTS): vol.All({cv.string: vol.Any(cv.boolean, vol.Schema({
-                    vol.Optional(CONF_INVOICES): cv.boolean,
-                    vol.Optional(CONF_METERS): cv.boolean,
-                    vol.Optional(CONF_WHITELIST, default=DEFAULT_WHITELIST): cv.boolean,
-                }))}, filter_strategies),
-                vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
-                vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
+
+                **NAME_FORMATS_SUBCONFIG,
+                **FILTER_SUBCONFIG,
+
                 vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
-                vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
-                vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
                 vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): POSITIVE_PERIOD_SCHEMA,
                 vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): POSITIVE_PERIOD_SCHEMA,
             }
