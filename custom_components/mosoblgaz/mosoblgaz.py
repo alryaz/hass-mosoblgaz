@@ -239,10 +239,15 @@ class MosoblgazAPI:
             'token': self.__graphql_token
         }, timeout=self.timeout) as session:
 
+            _LOGGER.debug('Sending payload: %s', payload)
+
             async with session.post(self.BATCH_URL, json=payload) as response:
 
                 try:
                     json_response = await response.json()
+
+                    _LOGGER.debug('Received data: %s', json_response)
+
                     return list(map(lambda x: x['data'], json_response))
 
                 except json.decoder.JSONDecodeError:
@@ -679,13 +684,12 @@ class Invoice:
     @property
     def balance(self) -> float:
         """Balance at the moment of invoice issue"""
-        return float(self._data.get('balance', 0))
+        return float(self._data.get('balance', 0.0))
 
     @property
     def paid(self) -> Optional[float]:
         """Paid amount (if available)"""
-        value = self._data.get('paid')
-        return None if value is None else float(value)
+        return float(self._data.get('paid', 0.0))
 
     @property
     def payments(self) -> List['Payment']:
@@ -705,8 +709,7 @@ class Invoice:
     @property
     def total(self) -> Optional[float]:
         """Invoice total"""
-        value = self._data.get('invoice')
-        return None if value is None else float(value)
+        return float(self._data.get('invoice', 0.0))
 
 
 class Payment:

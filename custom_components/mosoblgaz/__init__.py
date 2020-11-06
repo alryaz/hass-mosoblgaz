@@ -8,7 +8,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.const import (CONF_USERNAME, CONF_PASSWORD,
-                                 CONF_SCAN_INTERVAL, CONF_TIMEOUT)
+                                 CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_WHITELIST)
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import HomeAssistantType, ConfigType
@@ -42,6 +42,7 @@ DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {code}'
 DEFAULT_INVERT_INVOICES = False
 DEFAULT_ADD_INVOICES = True
 DEFAULT_ADD_METERS = True
+DEFAULT_WHITELIST = False
 
 POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
 
@@ -64,9 +65,12 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Required(CONF_USERNAME): cv.string,
                 vol.Required(CONF_PASSWORD): cv.string,
                 vol.Optional(CONF_CONTRACTS): vol.All({cv.string: vol.Any(cv.boolean, vol.Schema({
-                    vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
-                    vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
+                    vol.Optional(CONF_INVOICES): cv.boolean,
+                    vol.Optional(CONF_METERS): cv.boolean,
+                    vol.Optional(CONF_WHITELIST, default=DEFAULT_WHITELIST): cv.boolean,
                 }))}, filter_strategies),
+                vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
+                vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
                 vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
                 vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
                 vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
@@ -163,7 +167,7 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
         _LOGGER.error('Error authenticating with user "%s": %s' % (username, e))
         return False
 
-    except PartialOfflineException as e:
+    except PartialOfflineException:
         _LOGGER.error('Service appears to be partially offline, which prevents the component from fetching data. '
                       'Delaying config entry setup.')
         raise ConfigEntryNotReady()

@@ -71,7 +71,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         if False in filter_values:
             # Enable blacklist strategy
             add_strategy = False
-        elif True in filter_values:
+        else:
             # Enable whitelist strategy
             add_strategy = True
 
@@ -416,7 +416,7 @@ class MOGInvoiceSensor(MOGEntity):
                     prefix + 'payments_count': invoice.payments_count,
                 })
 
-        state_value = (last_invoice.paid or 0) + last_invoice.balance - (last_invoice.total or 0)
+        state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
         if self._invert_state:
             state_value *= -1
 
