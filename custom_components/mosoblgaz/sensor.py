@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Dict, Optional, Tuple, Union, List, Any
+from typing import Dict, Optional, Tuple, Union, List, Any, Mapping
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
@@ -20,9 +20,10 @@ from homeassistant.helpers.typing import HomeAssistantType, ConfigType
 from . import DATA_CONFIG, CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DATA_API_OBJECTS, DATA_ENTITIES, DATA_UPDATERS, \
     DEFAULT_METER_NAME_FORMAT, CONF_METER_NAME, CONF_CONTRACT_NAME, \
     DEFAULT_CONTRACT_NAME_FORMAT, CONF_INVOICES, DEFAULT_INVOICE_NAME_FORMAT, CONF_INVOICE_NAME, CONF_METERS, \
-    CONF_INVERT_INVOICES, DEFAULT_ADD_INVOICES, DEFAULT_ADD_METERS, DEFAULT_ADD_CONTRACTS, DEFAULT_PRIVACY_LOGGING, \
-    CONF_PRIVACY_LOGGING
-from .mosoblgaz import MosoblgazAPI, MosoblgazException, Meter, Invoice, Contract, PartialOfflineException
+    DEFAULT_ADD_INVOICES, DEFAULT_ADD_METERS, DEFAULT_ADD_CONTRACTS, DEFAULT_PRIVACY_LOGGING, \
+    CONF_PRIVACY_LOGGING, privacy_formatter
+from .mosoblgaz import MosoblgazAPI, MosoblgazException, Meter, Invoice, Contract, PartialOfflineException, \
+    INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH, INVOICE_GROUP_GAS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,6 +58,12 @@ ATTR_PAID = "paid"
 ATTR_BALANCE = "balance"
 ATTR_PAYMENTS_COUNT = "payments_count"
 
+ATTR_PREVIOUS_PERIOD = "previous_period"
+ATTR_PREVIOUS_TOTAL = "previous_total"
+ATTR_PREVIOUS_PAID = "previous_paid"
+ATTR_PREVIOUS_BALANCE = "previous_balance"
+ATTR_PREVIOUS_PAYMENTS_COUNT = "previous_payments_count"
+
 DEFAULT_MAX_INDICATIONS = 3
 INDICATIONS_SCHEMA = vol.Any(
     {vol.All(int, vol.Range(1, DEFAULT_MAX_INDICATIONS)): cv.positive_int},
@@ -64,24 +71,57 @@ INDICATIONS_SCHEMA = vol.Any(
 )
 
 
-def privacy_formatter(value: Any) -> str:
-    str_value = str(value)
-    if len(str_value) <= 2:
-        return str_value
+def get_should_add_entities(
+    contract_id: str,
+    default_add_contracts: Union[bool, Mapping[str, Any]] = DEFAULT_ADD_CONTRACTS,
+    default_add_meters: bool = DEFAULT_ADD_METERS,
+    default_add_invoices: bool = DEFAULT_ADD_INVOICES
+) -> Tuple[bool, bool, bool]:
+    """
+    Whether entities should be added to a given contract ID according to config.
+    :param contract_id:
+    :param default_add_contracts:
+    :param default_add_meters:
+    :param default_add_invoices:
+    :return:
+    """
+    if isinstance(default_add_contracts, Mapping):
+        contract_conf = default_add_contracts.get(contract_id)
+        if contract_conf is not None:
+            if contract_conf is True:
+                # Contract is specified to be "true", enable everything
+                return True, True, True
+            elif contract_conf is False:
+                # Contract is specified to be "false", disable everything
+                return False, False, False
+            else:
+                # Contract has specific settings
+                return (
+                    contract_conf.get(CONF_CONTRACTS, default_add_contracts),
+                    contract_conf.get(CONF_METERS, default_add_meters),
+                    contract_conf(CONF_INVOICES, default_add_invoices)
+                )
 
-    suffix = str_value[:-max(2, int(round(0.2, len(str_value))))]
-    return '*' * (len(str_value)-len(suffix)) + suffix
+    return default_add_contracts, default_add_meters, default_add_invoices
 
 
 async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: ConfigType, async_add_entities,
-                          now: Optional[datetime] = None) -> Union[bool, Tuple[int, int, int]]:
+                          now: Optional[datetime] = None) -> Union[bool, int]:
     username = user_cfg[CONF_USERNAME]
+    print_username = username
 
-    _LOGGER.debug('Running updater for entry %s at %s' % (entry_id, now or datetime.now()))
+    # Privacy logging configuration
+    privacy_logging_enabled = user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
+    if privacy_logging_enabled:
+        print_username = privacy_formatter(print_username)
+
+    log_prefix = f'(user|{print_username}) '
+
+    _LOGGER.debug(log_prefix + 'Running updater at %s', now or datetime.now())
     api: 'MosoblgazAPI' = hass.data.get(DATA_API_OBJECTS, {}).get(entry_id)
 
     if not api:
-        _LOGGER.debug('Updater for entry %s found no API object' % entry_id)
+        _LOGGER.debug(log_prefix + 'Updater found no API object')
         return False
 
     try:
@@ -89,147 +129,197 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         contracts = await api.fetch_contracts(with_data=True)
 
     except PartialOfflineException:
-        _LOGGER.error('Partial offline on username %s, will delay entity update' % username)
+        _LOGGER.error(log_prefix + 'Partial offline, will delay entity update')
         return False
 
     except MosoblgazException as e:
-        _LOGGER.error('Error fetching contracts: %s' % e)
+        _LOGGER.error(log_prefix + 'Error fetching contracts: %s', e)
         return False
 
-    use_contracts_filter = user_cfg.get(CONF_CONTRACTS)
+    # Do not process contracts if none received
+    # Return zero new entities
+    if not contracts:
+        _LOGGER.info(log_prefix + 'Did not receive any contract data')
+        return 0
 
-    # Fetch custom name formats (or select defaults)
-    contract_name_format = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
-    meter_name_format = user_cfg.get(CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT)
-    invoice_name_format = user_cfg.get(CONF_INVOICE_NAME, DEFAULT_INVOICE_NAME_FORMAT)
-
-    # Fetch default filter configuration
+    # Entity adding defaults
     default_add_meters = user_cfg.get(CONF_METERS, DEFAULT_ADD_METERS)
     default_add_invoices = user_cfg.get(CONF_INVOICES, DEFAULT_ADD_INVOICES)
+    default_add_contracts = user_cfg.get(CONF_CONTRACTS, DEFAULT_ADD_CONTRACTS)
 
-    # Privacy logging configuration
-    privacy_logging_enabled = user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
+    # Default name formats
+    name_format_meters = user_cfg.get(CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT)
+    name_format_invoices = user_cfg.get(CONF_INVOICE_NAME, DEFAULT_INVOICE_NAME_FORMAT)
+    name_format_contracts = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
 
-    created_entities = hass.data.setdefault(DATA_ENTITIES, {}).get(entry_id)
-    if created_entities is None:
-        created_entities = {}
-        hass.data[DATA_ENTITIES][entry_id] = created_entities
+    # Prepare created entities holder
+    entry_entities = hass.data.setdefault(DATA_ENTITIES, {}).setdefault(entry_id, {})
 
-    new_contracts = {}
-    new_meters = {}
-    new_invoices = {}
-
+    # Prepare temporary data holders
     tasks = []
+    new_entities = []
+
+    # Remove obsolete entities
+    obsolete_contract_ids = entry_entities.keys() - contracts.keys()
+    for contract_id in obsolete_contract_ids:
+        contract_entities = entry_entities[contract_id]
+        if MOGContractSensor in contract_entities:
+            tasks.append(contract_entities[MOGContractSensor].async_remove())
+            del contract_entities[MOGContractSensor]
+        if MOGMeterSensor in contract_entities:
+            tasks.extend(map(lambda x: x.async_remove(), contract_entities[MOGMeterSensor]))
+            del contract_entities[MOGMeterSensor]
+        if MOGInvoiceSensor in contract_entities:
+            tasks.extend(map(lambda x: x.async_remove(), contract_entities[MOGInvoiceSensor]))
+            del contract_entities[MOGInvoiceSensor]
+        del entry_entities[contract_id]
+
+    # Iterate over fetched contracts
     for contract_id, contract in contracts.items():
-        log_ext = (contract_id, username)
+        # Setup logging prefix for contract during processing
+        print_contract_id = contract_id
         if privacy_logging_enabled:
-            log_ext = tuple(map(privacy_formatter, log_ext))
+            print_contract_id = privacy_formatter(print_contract_id)
 
-        add_meters, add_invoices = default_add_meters, default_add_invoices
+        contract_log_prefix = f'{log_prefix}(contract|{print_contract_id}) '
 
-        if use_contracts_filter:
-            contract_conf = user_cfg[CONF_CONTRACTS].get(contract_id, DEFAULT_ADD_CONTRACTS)
-
-            if contract_conf is False:
-                _LOGGER.info('Not setting up contract %s on username %s' % log_ext)
-                continue
-            elif contract_conf is not False:
-                add_meters = contract_conf.get(CONF_METERS, add_meters)
-                add_invoices = contract_conf.get(CONF_INVOICES, add_invoices)
-
-        _LOGGER.debug('Setting up contract %s on username %s' % log_ext)
-
-        contract_entity = created_entities.get(contract_id)
-        if contract_entity is None:
-            contract_entity = MOGContractSensor(contract, contract_name_format)
-            new_contracts[contract_id] = contract_entity
-            tasks.append(contract_entity.async_update())
+        # Prepare entities holder
+        if contract_id in entry_entities:
+            _LOGGER.debug(contract_log_prefix + 'Updating contract')
+            contract_entities = entry_entities[contract_id]
         else:
+            contract_entities = {}
+            entry_entities[contract_id] = contract_entities
+            _LOGGER.debug(contract_log_prefix + 'Setting up contract')
+
+        # Get adding parameters
+        add_contracts, add_meters, add_invoices = get_should_add_entities(
+            contract_id=contract_id,
+            default_add_meters=default_add_meters,
+            default_add_invoices=default_add_invoices,
+            default_add_contracts=default_add_contracts,
+        )
+
+        # Process contract entity
+        contract_entity: Optional[MOGContractSensor] = contract_entities.get(MOGContractSensor)
+        if contract_entity:
             contract_entity.contract = contract
-            contract_entity.async_schedule_update_ha_state(force_refresh=True)
 
-        # Process meters
-        if add_meters:
-            _LOGGER.debug('Will be updating meters for %s on username %s' % (contract_id, username))
-            meters = contract.meters
-
-            if contract_entity.meter_entities is None:
-                meter_entities = {}
-                contract_entity.meter_entities = meter_entities
-
+            if contract_entity.enabled:
+                _LOGGER.debug(contract_log_prefix + 'Updating contract entity')
+                contract_entity.async_schedule_update_ha_state(force_refresh=True)
             else:
-                meter_entities = contract_entity.meter_entities
+                _LOGGER.debug(contract_log_prefix + 'Not updating disabled contract entity')
 
-                for meter_id in meter_entities.keys() - meters.keys():
-                    tasks.append(hass.async_create_task(meter_entities[meter_id].async_remove()))
-                    del meter_entities[meter_id]
+        else:
+            contract_entity = MOGContractSensor(
+                contract=contract,
+                name_format=name_format_contracts,
+                default_add=default_add_contracts,
+            )
+            new_entities.append(contract_entity)
+            contract_entities[MOGContractSensor] = contract_entity
+            tasks.append(contract_entity.async_update())
+            _LOGGER.debug(contract_log_prefix + 'Creating new contract entity')
 
-            for meter_id, meter in meters.items():
-                meter_entity = meter_entities.get(meter_id)
+        # Process meter entities
+        meters = contract.meters
+        meter_entities = contract_entities.setdefault(MOGMeterSensor, {})
+        obsolete_meter_ids = meter_entities.keys() - meters.keys()
+        for meter_id in obsolete_meter_ids:
+            tasks.append(meter_entities[meter_id].async_remove())
+            del meter_entities[meter_id]
 
-                if meter_entity is None:
-                    meter_entity = MOGMeterSensor(meter, meter_name_format)
-                    meter_entities[meter_id] = meter_entity
-                    new_meters[meter_id] = meter_entity
-                    tasks.append(meter_entity.async_update())
+        for meter_id, meter in meters.items():
+            meter_entity = meter_entities.get(meter_id)
 
-                else:
-                    meter_entity.meter = meter
+            # Logging prefix for meters
+            print_meter_id = meter_id
+            if privacy_logging_enabled:
+                print_meter_id = privacy_formatter(print_meter_id)
+
+            meter_log_prefix = contract_log_prefix + f'(meter|{print_meter_id}) '
+
+            if meter_entity:
+                meter_entity.contract = contract
+                meter_entity.meter = meter
+
+                if meter_entity.enabled:
+                    _LOGGER.debug(meter_log_prefix + 'Updating meter entity')
                     meter_entity.async_schedule_update_ha_state(force_refresh=True)
-        else:
-            _LOGGER.debug('Not setting up meters for %s on username %s' % log_ext)
+                else:
+                    _LOGGER.debug(meter_log_prefix + 'Not updating disabled meter entity')
+            else:
+                meter_entity = MOGMeterSensor(
+                    contract=contract,
+                    meter=meter,
+                    name_format=name_format_meters,
+                    default_add=add_meters,
+                )
+                new_entities.append(meter_entity)
+                meter_entities[meter_id] = meter_entity
+                tasks.append(meter_entity.async_update())
+                _LOGGER.debug(meter_log_prefix + 'Adding new meter entity')
 
-        # Process last and previous invoices
-        if add_invoices:
-            _LOGGER.debug('Will be updating invoices for %s on username %s' % log_ext)
-            invert_invoices = user_cfg[CONF_INVERT_INVOICES]
-            for group, invoices in contract.all_invoices_by_groups.items():
-                if invoices:
-                    if contract_entity.invoice_entities is None:
-                        contract_entity.invoice_entities = {}
-                        invoice_entity = None
-                    else:
-                        invoice_entity = contract_entity.invoice_entities.get(group)
+        # Process invoice entities
+        invoice_entities = contract_entities.setdefault(MOGInvoiceSensor, {})
+        obsolete_group_codes = invoice_entities.keys() - contract.all_invoices_by_groups.keys()
 
-                    if invoice_entity:
-                        contract_entity.invoice_entities[group].invoices = invoices
-                        contract_entity.async_schedule_update_ha_state(force_refresh=True)
+        for group_code, invoices in contract.all_invoices_by_groups.items():
+            invoice_entity: Optional[MOGInvoiceSensor] = invoice_entities.get(group_code)
 
-                    else:
-                        invoice_entity = MOGInvoiceSensor(invoices, invoice_name_format, invert_invoices)
-                        new_invoices[(contract.contract_id, group)] = invoice_entity
-                        contract_entity.invoice_entities[group] = invoice_entity
-                        tasks.append(invoice_entity.async_update())
-        else:
-            _LOGGER.debug('Not setting up invoices for %s on username %s' % log_ext)
+            invoice_log_prefix = contract_log_prefix + f'(invoice|{group_code}) '
 
+            if invoice_entity:
+                if not invoices:
+                    obsolete_group_codes.add(group_code)
+                    continue
+
+                invoice_entity.contract = contract
+                invoice_entity.invoices = invoices
+
+                if invoice_entity.enabled:
+                    _LOGGER.debug(invoice_log_prefix + f' Updating meter entity')
+                    invoice_entity.async_schedule_update_ha_state(force_refresh=True)
+                else:
+                    _LOGGER.debug(invoice_log_prefix + f' Not updating disabled meter entity')
+
+            elif invoices:
+                invoice_entity = MOGInvoiceSensor(
+                    contract=contract,
+                    group_code=group_code,
+                    invoices=invoices,
+                    name_format=name_format_invoices,
+                    default_add=add_invoices,
+                )
+                new_entities.append(invoice_entity)
+                invoice_entities[group_code] = invoice_entity
+                tasks.append(invoice_entity.async_update())
+                _LOGGER.debug(invoice_log_prefix + 'Adding new invoice entity')
+
+        if obsolete_group_codes:
+            _LOGGER.debug(contract_log_prefix + 'Removing invoices for obsolete groups: %s', obsolete_group_codes)
+            for group_code in obsolete_group_codes:
+                tasks.append(invoice_entities[group_code].async_remove())
+                del invoice_entities[group_code]
+
+    # Perform scheduled tasks before other procedures
     if tasks:
+        _LOGGER.debug(log_prefix + 'Performing %d tasks', len(tasks))
         await asyncio.wait(tasks)
 
-    if new_contracts:
-        async_add_entities(new_contracts.values())
+    if new_entities:
+        _LOGGER.debug(log_prefix + 'Adding %d new entities', len(new_entities))
+        async_add_entities(new_entities)
+    else:
+        _LOGGER.debug(log_prefix + 'Not adding new entities')
 
-    if new_meters:
-        async_add_entities(new_meters.values())
-
-    if new_invoices:
-        async_add_entities(new_invoices.values())
-
-    created_entities.update(new_contracts)
-
-    _LOGGER.debug('Successful update on entry %s' % entry_id)
-    _LOGGER.debug('New meters: %s' % new_meters)
-    _LOGGER.debug('New contracts: %s' % new_contracts)
-    _LOGGER.debug('New invoices: %s' % new_invoices)
-
-    return len(new_contracts), len(new_meters), len(new_invoices)
+    return len(new_entities)
 
 
 async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry, async_add_devices):
     user_cfg = {**config_entry.data}
     username = user_cfg[CONF_USERNAME]
-
-    _LOGGER.debug('Setting up entry for username "%s" from sensors' % username)
 
     if config_entry.source == config_entries.SOURCE_IMPORT:
         user_cfg = hass.data[DATA_CONFIG].get(username)
@@ -241,29 +331,35 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
     else:
         scan_interval = DEFAULT_SCAN_INTERVAL
 
+    print_username = username
+    if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
+        print_username = privacy_formatter(print_username)
+
+    log_prefix = f'(user|{print_username}) '
+
+    _LOGGER.debug(log_prefix + 'Setting up entry "%s"', config_entry.entry_id)
+
     update_call = partial(_entity_updater, hass, config_entry.entry_id, user_cfg, async_add_devices)
 
     try:
         result = await update_call()
 
         if result is False:
+            _LOGGER.error(log_prefix + 'Error running updater (see messages above)')
             return False
 
-        if not sum(result):
-            _LOGGER.warning('No contracts or meters discovered, check your configuration')
+        if result == 0:
+            _LOGGER.warning(log_prefix + 'No contracts or meters discovered, check your configuration')
             return True
 
         hass.data.setdefault(DATA_UPDATERS, {})[config_entry.entry_id] = \
             async_track_time_interval(hass, update_call, scan_interval)
 
-        new_contracts, new_meters, new_invoices = result
-
-        _LOGGER.info('Set up %d contracts, %d meters and %d invoices, will refresh every %s seconds'
-                     % (new_contracts, new_meters, new_invoices, scan_interval.seconds + scan_interval.days*86400))
+        _LOGGER.info(log_prefix + 'Will update account every %d seconds', scan_interval.total_seconds())
         return True
 
     except MosoblgazException as e:
-        raise PlatformNotReady('Error while setting up entry "%s": %s' % (config_entry.entry_id, str(e))) from None
+        raise PlatformNotReady(log_prefix + 'Critical error occurred: %s', e) from None
 
 
 async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, async_add_entities,
@@ -273,11 +369,28 @@ async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, asyn
 
 
 class MOGEntity(Entity):
-    def __init__(self):
-        self._icon: Optional[str] = None
-        self._state: Optional[Union[float, int, str]] = None
-        self._unit: Optional[str] = None
+    SENSOR_TYPE = NotImplemented
+    UNIQUE_ID_FORMAT = "{sensor_type}_{contract_code}"
+
+    def __init__(self, contract: 'Contract', icon: Optional[str] = None, name_format: Optional[str] = None,
+                 unit: Optional[str] = None, default_add: bool = True):
+        self.contract = contract
+
+        self._icon: Optional[str] = icon
+        self._unit: Optional[str] = unit
+        self._name_format: Optional[str] = name_format
+        self._default_add: bool = default_add
+
         self._attributes: Optional[Dict[str, Union[float, int, str]]] = None
+        self._state: Optional[Union[float, int, str]] = None
+
+    @property
+    def entity_registry_enabled_default(self) -> bool:
+        return self._default_add
+
+    @property
+    def contract_id(self):
+        return self.contract.contract_id
 
     @property
     def should_poll(self) -> bool:
@@ -295,9 +408,17 @@ class MOGEntity(Entity):
     @property
     def device_state_attributes(self):
         """Return the attribute(s) of the sensor"""
-        if self._attributes is None:
-            return None
-        return {**self._attributes, ATTR_ATTRIBUTION: ATTRIBUTION}
+        return {
+            **self.base_attributes,
+            **(self._attributes or {}),
+        }
+
+    @property
+    def base_attributes(self):
+        return {
+            ATTR_CONTRACT_CODE: self.contract.contract_id,
+            ATTR_ATTRIBUTION: ATTRIBUTION,
+        }
 
     @property
     def unit_of_measurement(self):
@@ -308,111 +429,148 @@ class MOGEntity(Entity):
     def icon(self):
         return self._icon
 
-
-class MOGContractSensor(MOGEntity):
-    """The class for this sensor"""
-    def __init__(self, contract: 'Contract', name_format: str):
-        super().__init__()
-
-        self._name_format = name_format
-        self._icon = 'mdi:stove'
-        self.contract: 'Contract' = contract
-
-        self.meter_entities: Optional[Dict[str, 'MOGMeterSensor']] = None
-        self.invoice_entities: Optional[Dict[str, 'MOGInvoiceSensor']] = None
-
-    async def async_update(self):
-        """The update method"""
-        attributes = {
-            ATTR_CONTRACT_CODE: self.contract.contract_id,
-            ATTR_ADDRESS: self.contract.address,
-            ATTR_PERSON: self.contract.person,
-            ATTR_DEPARTMENT: self.contract.department_title,
+    @property
+    def name_placeholders(self) -> Mapping[str, str]:
+        return {
+            "sensor_type": self.SENSOR_TYPE,
+            "contract_code": self.contract_id,
         }
-
-        self._state = self.contract.balance
-        self._unit = RUB_CURRENCY
-
-        self._attributes = attributes
-        _LOGGER.debug('Update for contract %s finished' % self)
 
     @property
     def name(self):
         """Return the name of the sensor"""
-        return self._name_format.format(
-            code=self.contract.contract_id,
-            department=self.contract.department_title
+        try:
+            return self._name_format.format(
+                **self.name_placeholders
+            )
+        except KeyError:
+            return self._name_format
+
+    @property
+    def unique_id(self) -> Optional[str]:
+        try:
+            return self.UNIQUE_ID_FORMAT.format(
+                **self.name_placeholders
+            )
+        except KeyError:
+            return self._name_format
+
+
+class MOGContractSensor(MOGEntity):
+    """The class for this sensor"""
+    def __init__(self, contract: Contract, name_format: str, default_add: bool = DEFAULT_ADD_CONTRACTS):
+        super().__init__(
+            contract=contract,
+            icon='mdi:file-document-edit',
+            name_format=name_format,
+            default_add=default_add,
+            unit=RUB_CURRENCY,
         )
+
+    async def async_update(self):
+        """The update method"""
+        contract = self.contract
+
+        self._state = self.contract.balance
+        self._attributes = {
+            ATTR_CONTRACT_CODE: contract.contract_id,
+            ATTR_ADDRESS: contract.address,
+            ATTR_PERSON: contract.person,
+            ATTR_DEPARTMENT: contract.department_title,
+        }
 
     @property
     def unique_id(self):
         """Return the unique ID of the sensor"""
         return 'ls_' + str(self.contract.contract_id)
 
+    @property
+    def name_placeholders(self) -> Mapping[str, str]:
+        return {
+            **super().name_placeholders,
+            "department": self.contract.department_title
+        }
+
 
 class MOGMeterSensor(MOGEntity):
     """The class for this sensor"""
-    def __init__(self, meter: 'Meter', name_format: str):
-        super().__init__()
+    SENSOR_TYPE = "meter"
 
-        self._icon = 'mdi:counter'
-        self._name_format = name_format
-        self._unit = 'м\u00B3'
+    def __init__(self, contract: Contract, name_format: str, meter: 'Meter',
+                 default_add: bool = DEFAULT_ADD_METERS):
+        super().__init__(
+            contract=contract,
+            name_format=name_format,
+            unit='м\u00B3',
+            icon='mdi:counter',
+            default_add=default_add,
+        )
+
         self.meter = meter
 
     async def async_update(self):
         """The update method"""
-        attributes = {
-            ATTR_CONTRACT_CODE: self.meter.contract.contract_id,
-            ATTR_METER_CODE: self.meter.device_id,
+        history_entry = self.meter.last_history_entry
+
+        self._state = history_entry.new_value if history_entry else 0
+        self._attributes = {
+            ATTR_COLLECTED_AT: history_entry.collected_at.isoformat() if history_entry else None,
+            ATTR_LAST_VALUE: history_entry.new_value if history_entry else None,
+            ATTR_LAST_COST: history_entry.cost if history_entry else None,
+            ATTR_LAST_CHARGED: history_entry.charged if history_entry else None,
+            ATTR_PREVIOUS_VALUE: history_entry.previous_value if history_entry else None,
         }
 
-        if self.meter.serial:
-            attributes[ATTR_SERIAL] = self.meter.serial
-
-        meter_status = 0
-
-        history_entry = self.meter.last_history_entry
-        if history_entry:
-            attributes.update({
-                ATTR_COLLECTED_AT: history_entry.collected_at.isoformat(),
-                ATTR_LAST_VALUE: history_entry.new_value,
-                ATTR_LAST_COST: history_entry.cost,
-                ATTR_LAST_CHARGED: history_entry.charged,
-                ATTR_PREVIOUS_VALUE: history_entry.previous_value,
-            })
-            meter_status = history_entry.new_value
-
-        self._state = meter_status
-        self._attributes = attributes
-
-        _LOGGER.debug('Update for meter %s finished' % self)
+    @property
+    def base_attributes(self):
+        return {
+            **super().base_attributes,
+            ATTR_METER_CODE: self.meter.device_id,
+            ATTR_SERIAL: self.meter.serial,
+        }
 
     @property
-    def name(self):
-        """Return the name of the sensor"""
-        return self._name_format.format(code=self.meter.device_id)
-
-    @property
-    def unique_id(self):
-        """Return the unique ID of the sensor"""
-        return 'meter_' + str(self.meter.device_id)
+    def name_placeholders(self) -> Mapping[str, str]:
+        return {
+            **super().name_placeholders,
+            "meter_code": self.meter.device_id,
+            "device_code": self.meter.device_id,
+            "device_id": self.meter.device_id,
+            "meter_id": self.meter.device_id,
+        }
 
 
 class MOGInvoiceSensor(MOGEntity):
+    SENSOR_TYPE = "invoice"
+
     FRIENDLY_GROUP_NAMES = {
-        'vkgo': 'VKGO',
+        INVOICE_GROUP_VDGO: 'VDGO',
+    }
+    GROUP_ICONS = {
+        INVOICE_GROUP_VDGO: 'mdi:progress-wrench',
+        INVOICE_GROUP_TECH: 'mdi:pipe-wrench',
+        INVOICE_GROUP_GAS: 'mdi:stove',
     }
 
-    def __init__(self, invoices: Dict[Tuple[int, int], 'Invoice'],
-                 name_format: str, invert_state: bool = False):
-        super().__init__()
+    def __init__(self, contract: Contract, name_format: str, group_code: str,
+                 invoices: Dict[Tuple[int, int], 'Invoice'], invert_state: bool = False,
+                 default_add: bool = DEFAULT_ADD_INVOICES):
+        super().__init__(
+            contract=contract,
+            name_format=name_format,
+            icon='mdi:receipt',
+            unit=RUB_CURRENCY,
+            default_add=default_add,
+        )
 
+        self.group_code = group_code
         self._invert_state = invert_state
-        self._icon = 'mdi:receipt'
-        self._unit = RUB_CURRENCY
-        self._name_format = name_format
         self.invoices = invoices
+        self._attributes = dict.fromkeys((
+            ATTR_PERIOD, ATTR_TOTAL, ATTR_PAID, ATTR_BALANCE, ATTR_PAYMENTS_COUNT,
+            ATTR_PREVIOUS_PERIOD, ATTR_PREVIOUS_TOTAL, ATTR_PREVIOUS_PAID,
+            ATTR_PREVIOUS_BALANCE, ATTR_PREVIOUS_PAYMENTS_COUNT,
+        ))
 
     @property
     def invoices(self) -> List['Invoice']:
@@ -423,64 +581,73 @@ class MOGInvoiceSensor(MOGEntity):
         self._invoices = list(sorted(value.values(), key=lambda x: x.period, reverse=True))
 
     @property
-    def last_invoice(self) -> 'Invoice':
-        return self._invoices[0]
+    def last_invoice(self) -> Optional['Invoice']:
+        if len(self._invoices) > 0:
+            return self._invoices[0]
 
     @property
-    def previous_invoice(self):
+    def previous_invoice(self) -> Optional['Invoice']:
         if len(self._invoices) > 1:
             return self._invoices[1]
 
-    async def async_update(self):
-        """The update method"""
-        last_invoice = self.last_invoice
-        attributes = {
-            ATTR_CONTRACT_CODE: last_invoice.contract.contract_id,
-            ATTR_INVOICE_GROUP: last_invoice.group,
+    @property
+    def base_attributes(self):
+        return {
+            **super().base_attributes,
+            ATTR_INVOICE_GROUP: self.group_code,
         }
 
-        for prefix, invoice in {'': last_invoice, 'previous_': self.previous_invoice}.items():
-            if invoice:
-                attributes.update({
-                    prefix + ATTR_PERIOD: invoice.period.isoformat(),
-                    prefix + ATTR_TOTAL: invoice.total,
-                    prefix + ATTR_PAID: invoice.paid,
-                    prefix + ATTR_BALANCE: invoice.balance,
-                    prefix + ATTR_PAYMENTS_COUNT: invoice.payments_count,
-                })
+    async def async_update(self):
+        """The update method"""
+        attributes = self._attributes
+        
+        if len(self._invoices) > 0:
+            last_invoice = self._invoices[0]
 
-        state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
-        if self._invert_state:
-            state_value *= -1
+            attributes[ATTR_PERIOD] = last_invoice.period.isoformat()
+            attributes[ATTR_TOTAL] = last_invoice.total
+            attributes[ATTR_PAID] = last_invoice.paid
+            attributes[ATTR_BALANCE] = last_invoice.balance
+            attributes[ATTR_PAYMENTS_COUNT] = last_invoice.payments_count
 
-        state_value = round(state_value, 2)
+            # Update state
+            state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
+            if self._invert_state:
+                state_value *= -1
 
-        if state_value == 0:
-            # while this looks weird, it gets rid of a useless negative sign
-            state_value = 0.0
+            state_value = round(state_value, 2)
 
-        self._state = state_value
-        self._attributes = attributes
+            if state_value == 0:
+                # while this looks weird, it gets rid of a useless negative sign
+                state_value = 0.0
 
-        _LOGGER.debug('Update for invoice %s finished' % self)
+            self._state = state_value
+
+            # Update previous invoice, if available
+            previous_invoice = self.previous_invoice
+
+            if previous_invoice:
+                attributes[ATTR_PREVIOUS_PERIOD] = previous_invoice.period.isoformat()
+                attributes[ATTR_PREVIOUS_TOTAL] = previous_invoice.total
+                attributes[ATTR_PREVIOUS_PAID] = previous_invoice.paid
+                attributes[ATTR_PREVIOUS_BALANCE] = previous_invoice.balance
+                attributes[ATTR_PREVIOUS_PAYMENTS_COUNT] = previous_invoice.payments_count
 
     @property
-    def name(self):
-        """Return the name of the sensor"""
-        last_invoice = self.last_invoice
-        group_code = last_invoice.group
+    def icon(self) -> Optional[str]:
+        return self.GROUP_ICONS.get(self.group_code, super().icon)
+
+    @property
+    def name_placeholders(self) -> Mapping[str, str]:
+        group_code = self.group_code
         group_name = self.FRIENDLY_GROUP_NAMES.get(group_code)
         if group_name is None:
             group_name = group_code.replace('_', ' ').capitalize()
 
-        return self._name_format.format(
-            code=last_invoice.contract.contract_id,
-            group=group_name,
-            group_code=group_code
-        )
-
-    @property
-    def unique_id(self):
-        """Return the unique ID of the sensor"""
-        last_invoice = self.last_invoice
-        return 'invoice_' + str(last_invoice.contract.contract_id) + '_' + str(last_invoice.group)
+        return {
+            **super().name_placeholders,
+            "group": group_name,
+            "group_name": group_name,
+            "group_code": group_code,
+            "group_id": group_code,
+        }

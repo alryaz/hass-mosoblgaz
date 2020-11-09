@@ -15,6 +15,10 @@ HistoryEntryDataType = Dict[str, Union[str, Dict[str, int]]]
 DeviceDataType = Dict[str, Any]
 InvoiceDataType = Mapping[str, Any]
 
+INVOICE_GROUP_GAS = 'gas'
+INVOICE_GROUP_VDGO = 'vdgo'
+INVOICE_GROUP_TECH = 'tech'
+INVOICE_GROUPS = (INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH)
 
 def convert_date_dict(date_dict: Dict[str, Union[str, int]]) -> datetime:
     return datetime.fromisoformat(date_dict['date']).replace(tzinfo=gettz(date_dict['timezone']))
@@ -239,20 +243,22 @@ class MosoblgazAPI:
             'token': self.__graphql_token
         }, timeout=self.timeout) as session:
 
-            _LOGGER.debug('Sending payload: %s', payload)
+            if _LOGGER.level == logging.DEBUG:
+                _LOGGER.debug('Sending payload: %s', payload)
 
             async with session.post(self.BATCH_URL, json=payload) as response:
 
                 try:
                     json_response = await response.json()
 
-                    _LOGGER.debug('Received data: %s', json_response)
+                    if _LOGGER.level == logging.DEBUG:
+                        _LOGGER.debug('Received data: %s', json_response)
 
                     return list(map(lambda x: x['data'], json_response))
 
                 except json.decoder.JSONDecodeError:
                     if _LOGGER.level == logging.DEBUG:
-                        _LOGGER.debug('Response text: %s' % await response.text())
+                        _LOGGER.debug('Response text: %s', await response.text())
 
                     raise QueryFailedException('decoding error')
 
@@ -379,16 +385,12 @@ class Contract:
         if self._invoices is None:
             self._invoices = {}
 
-        for invoice_group in ['gas', 'tech', 'vdgo']:
+        for invoice_group in INVOICE_GROUPS:
             invoice_data = self._data['calculationsAndPayments'].get(invoice_group)
-            invoice_periods = set()
+            invoices = self._invoices.setdefault(invoice_group, {})
 
-            if not invoice_data:
-                _LOGGER.debug('No invoice data for invoice group "%s"' % invoice_group)
-                invoices = self._invoices.setdefault(invoice_group, {})
-
-            else:
-                invoices = self._invoices.setdefault(invoice_group, {})
+            if invoice_data:
+                invoice_periods = set()
 
                 for period, invoice in invoice_data.items():
                     month, year = map(int, period.split('.'))
@@ -400,8 +402,8 @@ class Contract:
                     else:
                         invoices[period] = Invoice(self, invoice_group, invoice, period)
 
-            for invoice_key in invoices.keys() - invoice_periods:
-                del invoices[invoice_key]
+                for invoice_key in invoices.keys() - invoice_periods:
+                    del invoices[invoice_key]
 
     @property
     def _property_data(self) -> Dict[str, Any]:
@@ -481,19 +483,19 @@ class Contract:
 
     @property
     def invoices_gas(self) -> Dict[Tuple[int, int], 'Invoice']:
-        return self.all_invoices_by_groups['gas']
+        return self.all_invoices_by_groups[INVOICE_GROUP_GAS]
 
     @property
     def invoices_tech(self) -> Dict[Tuple[int, int], 'Invoice']:
-        return self.all_invoices_by_groups['tech']
+        return self.all_invoices_by_groups[INVOICE_GROUP_TECH]
 
     @property
     def invoices_vdgo(self) -> Dict[Tuple[int, int], 'Invoice']:
-        return self.all_invoices_by_groups['vdgo']
+        return self.all_invoices_by_groups[INVOICE_GROUP_VDGO]
 
     @property
     def balance(self):
-        return self._property_data['liveBalance']['liveBalance']
+        return round(float(self._property_data.get('liveBalance', {}).get('liveBalance', 0.0)), 2)
 
     @property
     def devices_data(self) -> List[Dict[str, Any]]:
@@ -537,7 +539,7 @@ class Device:
 
     @property
     def device_class_code(self) -> int:
-        return int(self.data['ClassCode'])
+        return int(self.data.get('ClassCode', -1))
 
     @property
     def device_class(self) -> Optional[str]:
@@ -565,7 +567,7 @@ class Meter(Device):
 
     @property
     def serial(self) -> Optional[str]:
-        return self.data['ManfNo']
+        return self.data.get('ManfNo')
 
     @property
     def date_next_check(self) -> date:
@@ -624,25 +626,25 @@ class HistoryEntry:
 
     @property
     def cost(self) -> float:
-        return float(self._data['Cost'])
+        return float(self._data.get('Cost', 0.0))
 
     @property
     def delta(self) -> int:
         if 'M3' in self._data:
-            return int(self._data['M3'])
+            return int(self._data.get('M3', 0))
         return self.new_value - self.previous_value
 
     @property
     def previous_value(self) -> int:
-        return int(self._data['prevV'])
+        return int(self._data.get('prevV', 0))
 
     @property
     def new_value(self) -> int:
-        return int(self._data['V'])
+        return int(self._data.get('V', 0))
 
     @property
     def charged(self) -> float:
-        return self.cost * self.delta
+        return round(self.cost * self.delta, 2)
 
 
 class Invoice:
@@ -684,12 +686,12 @@ class Invoice:
     @property
     def balance(self) -> float:
         """Balance at the moment of invoice issue"""
-        return float(self._data.get('balance', 0.0))
+        return round(float(self._data.get('balance', 0.0)), 2)
 
     @property
     def paid(self) -> Optional[float]:
         """Paid amount (if available)"""
-        return float(self._data.get('paid', 0.0))
+        return round(float(self._data.get('paid', 0.0)), 2)
 
     @property
     def payments(self) -> List['Payment']:
@@ -709,7 +711,7 @@ class Invoice:
     @property
     def total(self) -> Optional[float]:
         """Invoice total"""
-        return float(self._data.get('invoice', 0.0))
+        return round(float(self._data.get('invoice', 0.0)), 2)
 
 
 class Payment:

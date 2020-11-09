@@ -1,14 +1,15 @@
 """Mosoblgaz API"""
 import logging
 from datetime import timedelta
-from typing import TYPE_CHECKING, Optional, Dict, Union
+from typing import TYPE_CHECKING, Optional, Dict, Union, Any
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
+from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.const import (CONF_USERNAME, CONF_PASSWORD,
-                                 CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_WHITELIST)
+                                 CONF_SCAN_INTERVAL, CONF_TIMEOUT)
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import HomeAssistantType, ConfigType
@@ -37,13 +38,13 @@ DATA_UPDATERS = DOMAIN + '_updaters'
 
 DEFAULT_SCAN_INTERVAL = timedelta(hours=1)
 DEFAULT_TIMEOUT = timedelta(seconds=5)
-DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {code}'
-DEFAULT_METER_NAME_FORMAT = 'MOG Meter {code}'
-DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {code}'
+DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {contract_code}'
+DEFAULT_METER_NAME_FORMAT = 'MOG Meter {meter_code}'
+DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {contract_code}'
 DEFAULT_INVERT_INVOICES = False
-DEFAULT_ADD_CONTRACTS = True
 DEFAULT_ADD_INVOICES = True
 DEFAULT_ADD_METERS = True
+DEFAULT_ADD_CONTRACTS = True
 DEFAULT_PRIVACY_LOGGING = False
 
 POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
@@ -60,6 +61,20 @@ def filter_strategies(value: Dict[str, Union[bool, Dict[str, bool]]]) -> Dict[st
     return value
 
 
+def privacy_formatter(value: Any) -> str:
+    str_value = str(value)
+    if len(str_value) <= 2:
+        return str_value
+
+    suffix = str_value[-max(2, int(round(0.2*len(str_value)))):]
+    return '*' * (len(str_value)-len(suffix)) + suffix
+
+
+AUTHENTICATION_SUBCONFIG = {
+    vol.Required(CONF_USERNAME): cv.string,
+    vol.Required(CONF_PASSWORD): cv.string,
+}
+
 NAME_FORMATS_SUBCONFIG = {
     vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
     vol.Optional(CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT): cv.string,
@@ -69,16 +84,29 @@ NAME_FORMATS_SUBCONFIG = {
 DEFAULT_FILTER_SUBCONFIG = {
     vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
     vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
+    vol.Optional(CONF_CONTRACTS, default=DEFAULT_ADD_CONTRACTS): cv.boolean,
 }
 
 FILTER_SUBCONFIG = {
     **DEFAULT_FILTER_SUBCONFIG,
-    vol.Optional(CONF_CONTRACTS): vol.Optional({
-        cv.string: vol.Any(
-            vol.Optional(cv.boolean, default=DEFAULT_ADD_CONTRACTS),
-            vol.Schema(DEFAULT_FILTER_SUBCONFIG),
-        ),
-    }),
+    vol.Optional(CONF_CONTRACTS): vol.Any(
+        cv.boolean,
+        {
+            cv.string: vol.Any(
+                vol.Optional(cv.boolean, default=DEFAULT_ADD_CONTRACTS),
+                vol.Schema(DEFAULT_FILTER_SUBCONFIG),
+            ),
+        },
+    )
+}
+
+OPTIONS_SUBCONFIG = {
+    vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
+}
+
+INTERVALS_SUBCONFIG = {
+    vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): POSITIVE_PERIOD_SCHEMA,
+    vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): POSITIVE_PERIOD_SCHEMA,
 }
 
 CONFIG_SCHEMA = vol.Schema(
@@ -86,15 +114,11 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.All(cv.ensure_list, [vol.Schema(
             {
                 vol.Optional(CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING): cv.boolean,
-                vol.Required(CONF_USERNAME): cv.string,
-                vol.Required(CONF_PASSWORD): cv.string,
-
+                **AUTHENTICATION_SUBCONFIG,
                 **NAME_FORMATS_SUBCONFIG,
                 **FILTER_SUBCONFIG,
-
-                vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
-                vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): POSITIVE_PERIOD_SCHEMA,
-                vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): POSITIVE_PERIOD_SCHEMA,
+                **OPTIONS_SUBCONFIG,
+                **INTERVALS_SUBCONFIG,
             }
         )])
     },
@@ -123,25 +147,33 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
     hass.data[DATA_CONFIG] = yaml_config
 
     for user_cfg in domain_config:
-
         username = user_cfg[CONF_USERNAME]
 
-        _LOGGER.debug('User "%s" entry from YAML' % username)
+        print_username = username
+        if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
+            print_username = privacy_formatter(username)
+
+        log_prefix = f'(user|{print_username}) '
+
+        _LOGGER.debug(log_prefix + 'Loading configuration from YAML')
 
         existing_entry = _find_existing_entry(hass, username)
         if existing_entry:
             if existing_entry.source == config_entries.SOURCE_IMPORT:
+                _LOGGER.debug(log_prefix + 'Skipping existing import binding')
                 yaml_config[username] = user_cfg
-                _LOGGER.debug('Skipping existing import binding')
             else:
-                _LOGGER.warning('YAML config for user %s is overridden by another config entry!' % username)
+                _LOGGER.warning(log_prefix + 'YAML config is overridden via UI!')
             continue
 
         if username in yaml_config:
-            _LOGGER.warning('User "%s" set up multiple times. Check your configuration.' % username)
+            _LOGGER.warning(log_prefix + 'User is set up multiple times. Check your configuration.')
             continue
 
         yaml_config[username] = user_cfg
+
+        _LOGGER.debug(log_prefix + 'Creating import entry')
+
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN,
@@ -154,11 +186,13 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
 
 
 async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+    """Configuration entry setup procedure"""
     user_cfg = config_entry.data
     username = user_cfg[CONF_USERNAME]
 
     if config_entry.source == config_entries.SOURCE_IMPORT:
         yaml_config = hass.data.get(DATA_CONFIG)
+
         if not yaml_config or username not in yaml_config:
             _LOGGER.info('Removing entry %s after removal from YAML configuration.' % config_entry.entry_id)
             hass.async_create_task(
@@ -168,7 +202,13 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
 
         user_cfg = yaml_config.get(username)
 
-    _LOGGER.debug('Setting up config entry for user "%s"' % username)
+    print_username = username
+    if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
+        print_username = privacy_formatter(username)
+
+    log_prefix = f'(user|{print_username})'
+
+    _LOGGER.debug('%s Setting up config entry', log_prefix)
 
     from .mosoblgaz import MosoblgazAPI, MosoblgazException, today_blackout
 
@@ -179,24 +219,21 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
 
         contracts = await api_object.fetch_contracts(with_data=True)
 
-        if CONF_CONTRACTS in user_cfg and user_cfg[CONF_CONTRACTS]:
-            contracts = {k: v for k, v in contracts.items() if k in user_cfg[CONF_CONTRACTS]}
-
     except AuthenticationFailedException as e:
-        _LOGGER.error('Error authenticating with user "%s": %s' % (username, e))
+        _LOGGER.error(log_prefix + 'Error authenticating: %s', e)
         return False
 
     except PartialOfflineException:
-        _LOGGER.error('Service appears to be partially offline, which prevents the component from fetching data. '
-                      'Delaying config entry setup.')
+        _LOGGER.error('%s Service appears to be partially offline, which prevents '
+                      'the component from fetching data. Delaying config entry setup.', log_prefix)
         raise ConfigEntryNotReady()
 
     except MosoblgazException as e:
-        _LOGGER.error('API error with user "%s": "%s"' % (username, e))
+        _LOGGER.error('%s API error with user: "%s"', log_prefix, e)
         return False
 
     if not contracts:
-        _LOGGER.warning('No contracts found under username "%s"' % username)
+        _LOGGER.warning('%s No contracts found under username', log_prefix)
         return False
 
     hass.data.setdefault(DATA_API_OBJECTS, {})[config_entry.entry_id] = api_object
@@ -208,11 +245,12 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
         )
     )
 
-    _LOGGER.debug('Successfully set up user "%s"' % username)
+    _LOGGER.debug('%s Successfully set up account', log_prefix)
+
     return True
 
 
-async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry) -> bool:
     entry_id = config_entry.entry_id
 
     if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
@@ -238,3 +276,39 @@ async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entri
         )
         if not hass.data[DATA_ENTITIES]:
             del hass.data[DATA_ENTITIES]
+
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry) -> bool:
+    current_version = config_entry.version
+    update_args = {}
+    old_data = config_entry.data
+
+    _LOGGER.debug('Migrating entry "%s" (type="%s") from version %s',
+                  config_entry.entry_id,
+                  config_entry.source,
+                  current_version)
+
+    if current_version == 1:
+        if config_entry.source != SOURCE_IMPORT:
+            new_data = update_args.setdefault('data', {})
+            new_data[CONF_USERNAME] = old_data[CONF_USERNAME]
+            new_data[CONF_PASSWORD] = old_data[CONF_PASSWORD]
+
+            if CONF_INVERT_INVOICES in old_data:
+                new_options = update_args.setdefault('options', {})
+                new_options[CONF_INVERT_INVOICES] = old_data[CONF_INVERT_INVOICES]
+
+        current_version = 2
+
+    config_entry.version = current_version
+
+    if update_args:
+        _LOGGER.debug('Updating configuration entry "%s" with new data')
+        hass.config_entries.async_update_entry(config_entry, **update_args)
+
+    _LOGGER.debug('Migration of entry "%s" to version %s successful',
+                  config_entry.entry_id,
+                  current_version)
+    return True

@@ -1,10 +1,15 @@
 import logging
+import voluptuous as vol
 
 from homeassistant import config_entries
-from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_SCAN_INTERVAL
+from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
+from homeassistant.const import CONF_USERNAME, CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_TIMEOUT
+from homeassistant.core import callback
+from homeassistant.helpers import config_validation as cv
 
 from . import DOMAIN, CONF_METERS, CONF_INVOICES, AuthenticationFailedException, PartialOfflineException, \
-    CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DEFAULT_INVERT_INVOICES, CONF_INVERT_INVOICES
+    CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DEFAULT_INVERT_INVOICES, CONF_INVERT_INVOICES, AUTHENTICATION_SUBCONFIG, \
+    OPTIONS_SUBCONFIG, DEFAULT_FILTER_SUBCONFIG, INTERVALS_SUBCONFIG, DEFAULT_TIMEOUT
 from .mosoblgaz import MosoblgazException
 
 _LOGGER = logging.getLogger(__name__)
@@ -13,11 +18,10 @@ CONF_ENABLE_CONTRACT = "enable_contract"
 CONF_ADD_ALL_CONTRACTS = "add_all_contracts"
 
 
-@config_entries.HANDLERS.register(DOMAIN)
-class MosoblgazFlowHandler(config_entries.ConfigFlow):
+class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mosoblgaz config entries."""
 
-    VERSION = 1
+    VERSION = 2
     CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
 
     def __init__(self):
@@ -26,22 +30,9 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow):
         self._last_contract_id = None
         self._current_config = None
 
-        import voluptuous as vol
         from collections import OrderedDict
 
-        schema_user = OrderedDict()
-        schema_user[vol.Required(CONF_USERNAME)] = str
-        schema_user[vol.Required(CONF_PASSWORD)] = str
-        schema_user[vol.Optional(CONF_ADD_ALL_CONTRACTS, default=True)] = bool
-        schema_user[vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES)] = bool
-        schema_user[vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL.seconds)] = int
-        self.schema_user = vol.Schema(schema_user)
-
-        schema_contract = OrderedDict()
-        schema_contract[vol.Optional(CONF_ENABLE_CONTRACT, default=True)] = bool
-        schema_contract[vol.Optional(CONF_METERS, default=True)] = bool
-        schema_contract[vol.Optional(CONF_INVOICES, default=True)] = bool
-        self.schema_contract = vol.Schema(schema_contract)
+        self.schema_user = vol.Schema(OrderedDict(AUTHENTICATION_SUBCONFIG))
 
     async def _check_entry_exists(self, username: str):
         current_entries = self._async_current_entries()
@@ -134,3 +125,70 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow):
             return self.async_abort("already_exists")
 
         return self.async_create_entry(title="User: " + username, data={CONF_USERNAME: username})
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Mosoblgaz options callback."""
+        return MosoblgazOptionsFlowHandler(config_entry)
+
+
+class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
+    """Mosoblgaz options flow handler"""
+    def __init__(self, config_entry: ConfigEntry):
+        """Initialize Mosoblgaz options flow handler"""
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input=None):
+        """
+        Options flow entry point.
+        :param user_input: User input mapping
+        :return: Flow response
+        """
+        if self.config_entry.source == SOURCE_IMPORT:
+            return await self.async_step_import(user_input=user_input)
+
+        return await self.async_step_user(user_input=user_input)
+
+    async def async_step_import(self, user_input=None):
+        """
+        Callback for entries imported from YAML.
+        :param user_input: User input mapping
+        :return: Flow response
+        """
+        return self.async_show_form(
+            step_id="import",
+            data_schema=vol.Schema({
+                vol.Optional("not_in_use", default=False): cv.boolean,
+            })
+        )
+
+    async def async_step_user(self, user_input=None):
+        """
+        Callback for entries created via "Integrations" UI.
+        :param user_input: User input mapping
+        :return: Flow response
+        """
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        options = self.config_entry.options or {}
+
+        if self.config_entry.version == 1:
+            _LOGGER.debug('Version 1 config entry detected, merging initial data')
+            options = {**self.config_entry.data, **options}
+
+        default_invert_invoices = options.get(CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES)
+        default_timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT.total_seconds())
+        default_scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds())
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(CONF_INVERT_INVOICES, default=default_invert_invoices): cv.boolean,
+                    vol.Optional(CONF_TIMEOUT, default=default_timeout): cv.positive_int,
+                    vol.Optional(CONF_SCAN_INTERVAL, default=default_scan_interval): cv.positive_int,
+                }
+            )
+        )
