@@ -20,6 +20,7 @@ INVOICE_GROUP_VDGO = 'vdgo'
 INVOICE_GROUP_TECH = 'tech'
 INVOICE_GROUPS = (INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH)
 
+
 def convert_date_dict(date_dict: Dict[str, Union[str, int]]) -> datetime:
     return datetime.fromisoformat(date_dict['date']).replace(tzinfo=gettz(date_dict['timezone']))
 
@@ -94,7 +95,7 @@ class Queries:
             template_format = getattr(cls, template)
             if isinstance(template_format, tuple):
                 compiled_query = '(' + ', '.join(['$%s: %s' % v for v in template_format[0].items()]) + ')' + \
-                    cls.compile_sub_query(template_format[1])
+                                 cls.compile_sub_query(template_format[1])
             else:
                 compiled_query = cls.compile_sub_query(template_format)
 
@@ -142,11 +143,10 @@ class Queries:
 
 
 class MosoblgazAPI:
-
     BASE_URL = 'https://lkk.mosoblgaz.ru'
     AUTH_URL = BASE_URL + '/auth/login'
     BATCH_URL = BASE_URL + '/graphql/batch'
-    
+
     def __init__(self, username: str, password: str, timeout: Union[aiohttp.ClientTimeout, int, timedelta] = 15):
         self.__username = username
         self.__password = password
@@ -156,7 +156,7 @@ class MosoblgazAPI:
         self._contracts: Dict[str, Contract] = {}
 
         if isinstance(timeout, timedelta):
-            timeout = aiohttp.ClientTimeout(total=timeout.days * 86400 + timeout.seconds)
+            timeout = aiohttp.ClientTimeout(total=timeout.total_seconds())
 
         elif isinstance(timeout, int):
             timeout = aiohttp.ClientTimeout(total=timeout)
@@ -221,7 +221,8 @@ class MosoblgazAPI:
     async def perform_single_query(self, query: str, variables: Optional[Dict[str, Any]] = None):
         return (await self.perform_queries([(query, variables)]))[0]
 
-    async def perform_queries(self, queries: List[Union[str, Tuple[str, Optional[Dict[str, Any]]]]]) -> List[Dict[str, Any]]:
+    async def perform_queries(self, queries: List[Union[str, Tuple[str, Optional[Dict[str, Any]]]]]) -> List[
+        Dict[str, Any]]:
         if not self.is_logged_in:
             raise AuthenticationFailedException('Authentication required prior to making batch requests')
 
@@ -716,6 +717,7 @@ class Invoice:
 
 class Payment:
     """Payment class"""
+
     # @TODO: add more properties
     def __init__(self, data: Dict[str, Any]):
         self._data = data

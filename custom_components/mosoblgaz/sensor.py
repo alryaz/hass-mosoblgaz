@@ -6,65 +6,26 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Dict, Optional, Tuple, Union, List, Any, Mapping
+from typing import Dict, Optional, Tuple, Union, List, Any, Mapping, Type, Callable, Iterable
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.const import CONF_USERNAME, CONF_SCAN_INTERVAL, ATTR_ATTRIBUTION
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import HomeAssistantType, ConfigType
 
-from . import DATA_CONFIG, CONF_CONTRACTS, DEFAULT_SCAN_INTERVAL, DATA_API_OBJECTS, DATA_ENTITIES, DATA_UPDATERS, \
-    DEFAULT_METER_NAME_FORMAT, CONF_METER_NAME, CONF_CONTRACT_NAME, \
-    DEFAULT_CONTRACT_NAME_FORMAT, CONF_INVOICES, DEFAULT_INVOICE_NAME_FORMAT, CONF_INVOICE_NAME, CONF_METERS, \
-    DEFAULT_ADD_INVOICES, DEFAULT_ADD_METERS, DEFAULT_ADD_CONTRACTS, DEFAULT_PRIVACY_LOGGING, \
-    CONF_PRIVACY_LOGGING, privacy_formatter
+from . import privacy_formatter, get_print_username, is_privacy_logging_enabled
+from .const import *
 from .mosoblgaz import MosoblgazAPI, MosoblgazException, Meter, Invoice, Contract, PartialOfflineException, \
     INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH, INVOICE_GROUP_GAS
 
 _LOGGER = logging.getLogger(__name__)
 
-ATTRIBUTION = "Data provided by Mosoblgaz"
-RUB_CURRENCY = "руб."
 
-ENTITIES_CONTRACT = 'contract'
-ENTITIES_METER_TARIFF = 'meter_tariff'
-
-ATTR_INDICATIONS = "indications"
-ATTR_IGNORE_PERIOD = "ignore_period"
-
-ATTR_CONTRACT_CODE = "contract_code"
-ATTR_METER_CODE = "meter_code"
-
-ATTR_SERIAL = "serial"
-
-ATTR_ADDRESS = "address"
-ATTR_PERSON = "person"
-ATTR_DEPARTMENT = "department"
-
-ATTR_COLLECTED_AT = "collected_at"
-ATTR_LAST_VALUE = "last_value"
-ATTR_LAST_COST = "last_cost"
-ATTR_LAST_CHARGED = "last_charged"
-ATTR_PREVIOUS_VALUE = "previous_value"
-
-ATTR_INVOICE_GROUP = "invoice_group"
-ATTR_PERIOD = "period"
-ATTR_TOTAL = "total"
-ATTR_PAID = "paid"
-ATTR_BALANCE = "balance"
-ATTR_PAYMENTS_COUNT = "payments_count"
-
-ATTR_PREVIOUS_PERIOD = "previous_period"
-ATTR_PREVIOUS_TOTAL = "previous_total"
-ATTR_PREVIOUS_PAID = "previous_paid"
-ATTR_PREVIOUS_BALANCE = "previous_balance"
-ATTR_PREVIOUS_PAYMENTS_COUNT = "previous_payments_count"
-
-DEFAULT_MAX_INDICATIONS = 3
 INDICATIONS_SCHEMA = vol.Any(
     {vol.All(int, vol.Range(1, DEFAULT_MAX_INDICATIONS)): cv.positive_int},
     vol.All([cv.positive_int], vol.Length(1, DEFAULT_MAX_INDICATIONS))
@@ -105,23 +66,32 @@ def get_should_add_entities(
     return default_add_contracts, default_add_meters, default_add_invoices
 
 
-async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: ConfigType, async_add_entities,
-                          now: Optional[datetime] = None) -> Union[bool, int]:
+async def async_account_updater(
+    hass: HomeAssistantType,
+    config_entry: config_entries.ConfigEntry,
+    async_add_entities: Callable[[Iterable[Entity]], Any],
+    now: Optional[datetime] = None
+) -> Union[bool, int]:
+    """Perform update on account"""
+    entry_id = config_entry.entry_id
+    user_cfg = config_entry.data
     username = user_cfg[CONF_USERNAME]
-    print_username = username
+
+    if config_entry.source == SOURCE_IMPORT:
+        user_cfg = hass.data[DATA_CONFIG][username]
+        options_cfg = user_cfg
+    else:
+        options_cfg = config_entry.options
 
     # Privacy logging configuration
-    privacy_logging_enabled = user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
-    if privacy_logging_enabled:
-        print_username = privacy_formatter(print_username)
+    privacy_logging_enabled = is_privacy_logging_enabled(hass, config_entry)
+    log_prefix = f'(user|{get_print_username(hass, config_entry, privacy_logging=privacy_logging_enabled)})'
 
-    log_prefix = f'(user|{print_username}) '
-
-    _LOGGER.debug(log_prefix + 'Running updater at %s', now or datetime.now())
+    _LOGGER.debug('%s Running updater at %s', log_prefix, now or datetime.now())
     api: 'MosoblgazAPI' = hass.data.get(DATA_API_OBJECTS, {}).get(entry_id)
 
     if not api:
-        _LOGGER.debug(log_prefix + 'Updater found no API object')
+        _LOGGER.debug('%s Updater found no API object', log_prefix)
         return False
 
     try:
@@ -129,28 +99,36 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         contracts = await api.fetch_contracts(with_data=True)
 
     except PartialOfflineException:
-        _LOGGER.error(log_prefix + 'Partial offline, will delay entity update')
+        _LOGGER.error('%s Partial offline, will delay entity update', log_prefix)
         return False
 
     except MosoblgazException as e:
-        _LOGGER.error(log_prefix + 'Error fetching contracts: %s', e)
+        _LOGGER.error('%s Error fetching contracts: %s', log_prefix, e)
         return False
 
     # Do not process contracts if none received
     # Return zero new entities
     if not contracts:
-        _LOGGER.info(log_prefix + 'Did not receive any contract data')
+        _LOGGER.info('%s Did not receive any contract data', log_prefix)
         return 0
 
     # Entity adding defaults
-    default_add_meters = user_cfg.get(CONF_METERS, DEFAULT_ADD_METERS)
-    default_add_invoices = user_cfg.get(CONF_INVOICES, DEFAULT_ADD_INVOICES)
-    default_add_contracts = user_cfg.get(CONF_CONTRACTS, DEFAULT_ADD_CONTRACTS)
+    if config_entry.source == SOURCE_IMPORT:
+        default_add_meters = user_cfg.get(CONF_METERS, DEFAULT_ADD_METERS)
+        default_add_invoices = user_cfg.get(CONF_INVOICES, DEFAULT_ADD_INVOICES)
+        default_add_contracts = user_cfg.get(CONF_CONTRACTS, DEFAULT_ADD_CONTRACTS)
 
-    # Default name formats
-    name_format_meters = user_cfg.get(CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT)
-    name_format_invoices = user_cfg.get(CONF_INVOICE_NAME, DEFAULT_INVOICE_NAME_FORMAT)
-    name_format_contracts = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
+        name_format_meters = user_cfg.get(CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT)
+        name_format_invoices = user_cfg.get(CONF_INVOICE_NAME, DEFAULT_INVOICE_NAME_FORMAT)
+        name_format_contracts = user_cfg.get(CONF_CONTRACT_NAME, DEFAULT_CONTRACT_NAME_FORMAT)
+    else:
+        default_add_meters, default_add_invoices, default_add_contracts =\
+            DEFAULT_ADD_METERS, DEFAULT_ADD_INVOICES, DEFAULT_ADD_CONTRACTS
+        name_format_meters, name_format_invoices, name_format_contracts =\
+            DEFAULT_METER_NAME_FORMAT, DEFAULT_INVOICE_NAME_FORMAT, DEFAULT_CONTRACT_NAME_FORMAT
+
+    # Common options collection
+    invert_invoices = options_cfg.get(CONF_INVERT_INVOICES)
 
     # Prepare created entities holder
     entry_entities = hass.data.setdefault(DATA_ENTITIES, {}).setdefault(entry_id, {})
@@ -163,15 +141,19 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
     obsolete_contract_ids = entry_entities.keys() - contracts.keys()
     for contract_id in obsolete_contract_ids:
         contract_entities = entry_entities[contract_id]
+
         if MOGContractSensor in contract_entities:
             tasks.append(contract_entities[MOGContractSensor].async_remove())
             del contract_entities[MOGContractSensor]
+
         if MOGMeterSensor in contract_entities:
             tasks.extend(map(lambda x: x.async_remove(), contract_entities[MOGMeterSensor]))
             del contract_entities[MOGMeterSensor]
+
         if MOGInvoiceSensor in contract_entities:
             tasks.extend(map(lambda x: x.async_remove(), contract_entities[MOGInvoiceSensor]))
             del contract_entities[MOGInvoiceSensor]
+
         del entry_entities[contract_id]
 
     # Iterate over fetched contracts
@@ -181,16 +163,24 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         if privacy_logging_enabled:
             print_contract_id = privacy_formatter(print_contract_id)
 
-        contract_log_prefix = f'{log_prefix}(contract|{print_contract_id}) '
+        contract_log_prefix = log_prefix + f' (contract|{print_contract_id})'
 
         # Prepare entities holder
         if contract_id in entry_entities:
-            _LOGGER.debug(contract_log_prefix + 'Updating contract')
+            _LOGGER.debug('%s Refreshing entity data', contract_log_prefix)
             contract_entities = entry_entities[contract_id]
         else:
             contract_entities = {}
             entry_entities[contract_id] = contract_entities
-            _LOGGER.debug(contract_log_prefix + 'Setting up contract')
+            _LOGGER.debug('%s Setting up new entities', contract_log_prefix)
+
+        contract_entities: Dict[
+            Type[MOGEntity],
+            Union[
+                MOGContractSensor,
+                Dict[str, Union[MOGMeterSensor, MOGInvoiceSensor]]
+            ]
+        ]
 
         # Get adding parameters
         add_contracts, add_meters, add_invoices = get_should_add_entities(
@@ -206,10 +196,10 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
             contract_entity.contract = contract
 
             if contract_entity.enabled:
-                _LOGGER.debug(contract_log_prefix + 'Updating contract entity')
+                _LOGGER.debug('%s Updating contract entity', contract_log_prefix)
                 contract_entity.async_schedule_update_ha_state(force_refresh=True)
             else:
-                _LOGGER.debug(contract_log_prefix + 'Not updating disabled contract entity')
+                _LOGGER.debug('%s Not updating disabled contract entity', contract_log_prefix)
 
         else:
             contract_entity = MOGContractSensor(
@@ -220,7 +210,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
             new_entities.append(contract_entity)
             contract_entities[MOGContractSensor] = contract_entity
             tasks.append(contract_entity.async_update())
-            _LOGGER.debug(contract_log_prefix + 'Creating new contract entity')
+            _LOGGER.debug('%s Creating new contract entity', contract_log_prefix)
 
         # Process meter entities
         meters = contract.meters
@@ -238,17 +228,17 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
             if privacy_logging_enabled:
                 print_meter_id = privacy_formatter(print_meter_id)
 
-            meter_log_prefix = contract_log_prefix + f'(meter|{print_meter_id}) '
+            meter_log_prefix = contract_log_prefix + f' (meter|{print_meter_id})'
 
             if meter_entity:
                 meter_entity.contract = contract
                 meter_entity.meter = meter
 
                 if meter_entity.enabled:
-                    _LOGGER.debug(meter_log_prefix + 'Updating meter entity')
+                    _LOGGER.debug('%s Updating meter entity', meter_log_prefix)
                     meter_entity.async_schedule_update_ha_state(force_refresh=True)
                 else:
-                    _LOGGER.debug(meter_log_prefix + 'Not updating disabled meter entity')
+                    _LOGGER.debug('%s Not updating disabled meter entity', meter_log_prefix)
             else:
                 meter_entity = MOGMeterSensor(
                     contract=contract,
@@ -259,7 +249,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                 new_entities.append(meter_entity)
                 meter_entities[meter_id] = meter_entity
                 tasks.append(meter_entity.async_update())
-                _LOGGER.debug(meter_log_prefix + 'Adding new meter entity')
+                _LOGGER.debug('%s Adding new meter entity', meter_log_prefix)
 
         # Process invoice entities
         invoice_entities = contract_entities.setdefault(MOGInvoiceSensor, {})
@@ -268,7 +258,7 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
         for group_code, invoices in contract.all_invoices_by_groups.items():
             invoice_entity: Optional[MOGInvoiceSensor] = invoice_entities.get(group_code)
 
-            invoice_log_prefix = contract_log_prefix + f'(invoice|{group_code}) '
+            invoice_log_prefix = contract_log_prefix + f' (invoice|{group_code})'
 
             if invoice_entity:
                 if not invoices:
@@ -279,10 +269,10 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                 invoice_entity.invoices = invoices
 
                 if invoice_entity.enabled:
-                    _LOGGER.debug(invoice_log_prefix + f' Updating meter entity')
+                    _LOGGER.debug('%s Updating meter entity', invoice_log_prefix)
                     invoice_entity.async_schedule_update_ha_state(force_refresh=True)
                 else:
-                    _LOGGER.debug(invoice_log_prefix + f' Not updating disabled meter entity')
+                    _LOGGER.debug('%s Not updating disabled meter entity', invoice_log_prefix)
 
             elif invoices:
                 invoice_entity = MOGInvoiceSensor(
@@ -291,79 +281,96 @@ async def _entity_updater(hass: HomeAssistantType, entry_id: str, user_cfg: Conf
                     invoices=invoices,
                     name_format=name_format_invoices,
                     default_add=add_invoices,
+                    invert_state=invert_invoices,
                 )
                 new_entities.append(invoice_entity)
                 invoice_entities[group_code] = invoice_entity
                 tasks.append(invoice_entity.async_update())
-                _LOGGER.debug(invoice_log_prefix + 'Adding new invoice entity')
+                if invert_invoices:
+                    _LOGGER.debug('%s Adding new inverted invoice entity', invoice_log_prefix)
+                else:
+                    _LOGGER.debug('%s Adding new invoice entity', invoice_log_prefix)
 
         if obsolete_group_codes:
-            _LOGGER.debug(contract_log_prefix + 'Removing invoices for obsolete groups: %s', obsolete_group_codes)
+            _LOGGER.debug('%s Removing invoices for obsolete groups: %s', contract_log_prefix, obsolete_group_codes)
             for group_code in obsolete_group_codes:
                 tasks.append(invoice_entities[group_code].async_remove())
                 del invoice_entities[group_code]
 
     # Perform scheduled tasks before other procedures
     if tasks:
-        _LOGGER.debug(log_prefix + 'Performing %d tasks', len(tasks))
+        _LOGGER.debug('%s Performing %d tasks', log_prefix, len(tasks))
         await asyncio.wait(tasks)
 
     if new_entities:
-        _LOGGER.debug(log_prefix + 'Adding %d new entities', len(new_entities))
+        _LOGGER.debug('%s Adding %d new entities', log_prefix, len(new_entities))
         async_add_entities(new_entities)
     else:
-        _LOGGER.debug(log_prefix + 'Not adding new entities')
+        _LOGGER.debug('%s Not adding new entities', log_prefix)
 
     return len(new_entities)
 
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry, async_add_devices):
+async def async_setup_entry(
+    hass: HomeAssistantType,
+    config_entry: config_entries.ConfigEntry,
+    async_add_devices: Callable[[Iterable[Entity]], Any]
+):
+    """
+    Setup configuration entry.
+    :param hass:
+    :param config_entry:
+    :param async_add_devices:
+    :return:
+    """
     user_cfg = {**config_entry.data}
     username = user_cfg[CONF_USERNAME]
 
     if config_entry.source == config_entries.SOURCE_IMPORT:
-        user_cfg = hass.data[DATA_CONFIG].get(username)
-        scan_interval = user_cfg[CONF_SCAN_INTERVAL]
-
-    elif CONF_SCAN_INTERVAL in user_cfg:
-        scan_interval = timedelta(seconds=user_cfg[CONF_SCAN_INTERVAL])
-
+        user_cfg = hass.data[DATA_CONFIG][username]
+        options_cfg = user_cfg
     else:
-        scan_interval = DEFAULT_SCAN_INTERVAL
+        options_cfg = config_entry.options
 
-    print_username = username
-    if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
-        print_username = privacy_formatter(print_username)
+    log_prefix = f'(user|{get_print_username(hass, config_entry)})'
 
-    log_prefix = f'(user|{print_username}) '
+    _LOGGER.debug('%s Setting up entry "%s"', log_prefix, config_entry.entry_id)
 
-    _LOGGER.debug(log_prefix + 'Setting up entry "%s"', config_entry.entry_id)
-
-    update_call = partial(_entity_updater, hass, config_entry.entry_id, user_cfg, async_add_devices)
+    update_call = partial(async_account_updater, hass, config_entry, async_add_devices)
 
     try:
         result = await update_call()
 
         if result is False:
-            _LOGGER.error(log_prefix + 'Error running updater (see messages above)')
+            _LOGGER.error('%s Error running updater (see messages above)', log_prefix)
             return False
 
         if result == 0:
-            _LOGGER.warning(log_prefix + 'No contracts or meters discovered, check your configuration')
+            _LOGGER.warning('%s No contracts or meters discovered, check your configuration', log_prefix)
             return True
+
+        scan_interval = options_cfg.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+
+        if not isinstance(scan_interval, timedelta):
+            scan_interval = timedelta(seconds=scan_interval)
 
         hass.data.setdefault(DATA_UPDATERS, {})[config_entry.entry_id] = \
             async_track_time_interval(hass, update_call, scan_interval)
 
-        _LOGGER.info(log_prefix + 'Will update account every %d seconds', scan_interval.total_seconds())
+        _LOGGER.info('%s Will update account every %d seconds', log_prefix, scan_interval.total_seconds())
         return True
 
     except MosoblgazException as e:
-        raise PlatformNotReady(log_prefix + 'Critical error occurred: %s', e) from None
+        raise PlatformNotReady('%s Critical error occurred: %s', log_prefix, e) from None
 
 
-async def async_setup_platform(hass: HomeAssistantType, config: ConfigType, async_add_entities,
-                               discovery_info=None):
+# noinspection PyUnusedLocal
+async def async_setup_platform(
+    hass: HomeAssistantType,
+    config: ConfigType,
+    async_add_entities: Callable[[Iterable[Entity]], Any],
+    discovery_info=None
+):
     """Set up the sensor platform"""
     return False
 

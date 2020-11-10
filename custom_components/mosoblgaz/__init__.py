@@ -1,64 +1,36 @@
 """Mosoblgaz API"""
+__all__ = [
+    'privacy_formatter',
+    'is_privacy_logging_enabled',
+    'get_print_username',
+    'async_setup',
+    'async_setup_entry',
+    'async_unload_entry',
+    'async_update_options',
+    'async_migrate_entry',
+    'DOMAIN',
+    'CONFIG_SCHEMA',
+]
 import logging
-from datetime import timedelta
-from typing import TYPE_CHECKING, Optional, Dict, Union, Any
+from typing import Optional, Union, Any, List, Mapping
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
-from homeassistant.config_entries import SOURCE_IMPORT
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import (CONF_USERNAME, CONF_PASSWORD,
                                  CONF_SCAN_INTERVAL, CONF_TIMEOUT)
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import HomeAssistantType, ConfigType
 
+from .const import *
 from .mosoblgaz import MosoblgazAPI, AuthenticationFailedException, MOSCOW_TIMEZONE, PartialOfflineException
-
-if TYPE_CHECKING:
-    from .sensor import MOGContractSensor
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_CONTRACTS = "contracts"
-CONF_METER_NAME = "meter_name"
-CONF_CONTRACT_NAME = "contract_name"
-CONF_METERS = "meters"
-CONF_INVOICES = "invoices"
-CONF_INVOICE_NAME = "invoice_name"
-CONF_INVERT_INVOICES = "invert_invoices"
-CONF_PRIVACY_LOGGING = "privacy_logging"
-
-DOMAIN = 'mosoblgaz'
-DATA_CONFIG = DOMAIN + '_config'
-DATA_API_OBJECTS = DOMAIN + '_api_objects'
-DATA_ENTITIES = DOMAIN + '_entities'
-DATA_UPDATERS = DOMAIN + '_updaters'
-
-DEFAULT_SCAN_INTERVAL = timedelta(hours=1)
-DEFAULT_TIMEOUT = timedelta(seconds=5)
-DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {contract_code}'
-DEFAULT_METER_NAME_FORMAT = 'MOG Meter {meter_code}'
-DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {contract_code}'
-DEFAULT_INVERT_INVOICES = False
-DEFAULT_ADD_INVOICES = True
-DEFAULT_ADD_METERS = True
-DEFAULT_ADD_CONTRACTS = True
-DEFAULT_PRIVACY_LOGGING = False
-
 POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
-
-
-def filter_strategies(value: Dict[str, Union[bool, Dict[str, bool]]]) -> Dict[str, Union[bool, Dict[str, bool]]]:
-    if False in value.values():
-        # Blacklist strategy / Стратегия чёрного списка
-        return {
-            contract_id: setting
-            for contract_id, setting in value.items()
-            if setting is not True
-        }
-    return value
 
 
 def privacy_formatter(value: Any) -> str:
@@ -68,6 +40,29 @@ def privacy_formatter(value: Any) -> str:
 
     suffix = str_value[-max(2, int(round(0.2*len(str_value)))):]
     return '*' * (len(str_value)-len(suffix)) + suffix
+
+
+def is_privacy_logging_enabled(hass: HomeAssistantType, config: Union[ConfigEntry, Mapping[str, Any]]) -> bool:
+    if isinstance(config, ConfigEntry):
+        if config.source == SOURCE_IMPORT:
+            config = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
+        else:
+            config = config.options
+
+    return config.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
+
+
+def get_print_username(hass: HomeAssistantType, config: Union[ConfigEntry, Mapping[str, Any]],
+                       privacy_logging: Optional[bool] = None) -> str:
+    if isinstance(config, ConfigEntry):
+        username = config.data[CONF_USERNAME]
+    else:
+        username = config[CONF_USERNAME]
+
+    if privacy_logging is None:
+        privacy_logging = is_privacy_logging_enabled(hass, config)
+
+    return privacy_formatter(username) if privacy_logging else username
 
 
 AUTHENTICATION_SUBCONFIG = {
@@ -109,18 +104,42 @@ INTERVALS_SUBCONFIG = {
     vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): POSITIVE_PERIOD_SCHEMA,
 }
 
+
+def _unique_username_validator(configs: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+    existing_usernames = set()
+    exceptions = []
+    for i, config in enumerate(configs):
+        if config[CONF_USERNAME] in existing_usernames:
+            exceptions.append(vol.Invalid('duplicate username entry detected', [i]))
+        else:
+            existing_usernames.add(config[CONF_USERNAME])
+
+    if len(exceptions) > 1:
+        raise vol.MultipleInvalid(exceptions)
+    elif len(exceptions) == 1:
+        raise exceptions[0]
+
+    return configs
+
+
 CONFIG_SCHEMA = vol.Schema(
     {
-        DOMAIN: vol.All(cv.ensure_list, [vol.Schema(
-            {
-                vol.Optional(CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING): cv.boolean,
-                **AUTHENTICATION_SUBCONFIG,
-                **NAME_FORMATS_SUBCONFIG,
-                **FILTER_SUBCONFIG,
-                **OPTIONS_SUBCONFIG,
-                **INTERVALS_SUBCONFIG,
-            }
-        )])
+        DOMAIN: vol.All(
+            cv.ensure_list,
+            [
+                vol.Schema(
+                    {
+                        vol.Optional(CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING): cv.boolean,
+                        **AUTHENTICATION_SUBCONFIG,
+                        **NAME_FORMATS_SUBCONFIG,
+                        **FILTER_SUBCONFIG,
+                        **OPTIONS_SUBCONFIG,
+                        **INTERVALS_SUBCONFIG,
+                    }
+                )
+            ],
+            _unique_username_validator
+        )
     },
     extra=vol.ALLOW_EXTRA,
 )
@@ -137,37 +156,34 @@ def _find_existing_entry(hass: HomeAssistantType, username: str) -> Optional[con
 async def async_setup(hass: HomeAssistantType, config: ConfigType):
     """Set up the Mosoblgaz component."""
     domain_config = config.get(DOMAIN)
+
+    # Skip YAML import if domain configuration is empty
     if not domain_config:
         return True
 
-    domain_data = {}
-    hass.data[DOMAIN] = domain_data
-
+    # Setup YAML configuration placeholders
     yaml_config = {}
     hass.data[DATA_CONFIG] = yaml_config
 
+    # Iterate over YAML configuration entries
     for user_cfg in domain_config:
         username = user_cfg[CONF_USERNAME]
 
-        print_username = username
-        if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
-            print_username = privacy_formatter(username)
-
-        log_prefix = f'(user|{print_username}) '
+        # Create logging prefix
+        log_prefix = f'(user|{get_print_username(hass, user_cfg)}) '
 
         _LOGGER.debug(log_prefix + 'Loading configuration from YAML')
 
+        # Check against internal database for existing entries
         existing_entry = _find_existing_entry(hass, username)
         if existing_entry:
             if existing_entry.source == config_entries.SOURCE_IMPORT:
+                # Do not add duplicate import entry
                 _LOGGER.debug(log_prefix + 'Skipping existing import binding')
                 yaml_config[username] = user_cfg
             else:
+                # Do not add YAML entry override
                 _LOGGER.warning(log_prefix + 'YAML config is overridden via UI!')
-            continue
-
-        if username in yaml_config:
-            _LOGGER.warning(log_prefix + 'User is set up multiple times. Check your configuration.')
             continue
 
         yaml_config[username] = user_cfg
@@ -200,24 +216,26 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
             )
             return False
 
-        user_cfg = yaml_config.get(username)
+        user_cfg = yaml_config[username]
+        options_cfg = user_cfg
+    else:
+        options_cfg = config_entry.options
 
-    print_username = username
-    if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
-        print_username = privacy_formatter(username)
-
-    log_prefix = f'(user|{print_username})'
-
+    log_prefix = f'(user|{get_print_username(hass, user_cfg)})'
     _LOGGER.debug('%s Setting up config entry', log_prefix)
 
     from .mosoblgaz import MosoblgazAPI, MosoblgazException, today_blackout
 
     try:
-        api_object = MosoblgazAPI(username, user_cfg[CONF_PASSWORD])
+        api_object = MosoblgazAPI(
+            username=username,
+            password=user_cfg[CONF_PASSWORD],
+            timeout=options_cfg.get(CONF_TIMEOUT, DEFAULT_TIMEOUT),
+        )
 
         await api_object.authenticate()
 
-        contracts = await api_object.fetch_contracts(with_data=True)
+        contracts = await api_object.fetch_contracts(with_data=False)
 
     except AuthenticationFailedException as e:
         _LOGGER.error(log_prefix + 'Error authenticating: %s', e)
@@ -245,28 +263,54 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
         )
     )
 
+    _LOGGER.debug('%s Attaching options update listener')
+    options_listener = config_entry.add_update_listener(async_update_options)
+    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[config_entry.entry_id] = options_listener
+
     _LOGGER.debug('%s Successfully set up account', log_prefix)
 
     return True
 
 
+async def async_update_options(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+    """React to options update"""
+    log_prefix = f'(user|{get_print_username(hass, config_entry)})'
+    _LOGGER.debug('%s Reloading configuration entry due to options update', log_prefix)
+    await hass.config_entries.async_reload(config_entry.entry_id)
+
+
 async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry) -> bool:
     entry_id = config_entry.entry_id
+    user_cfg = config_entry.data
+    print_username = user_cfg[CONF_USERNAME]
+
+    if config_entry.source == SOURCE_IMPORT:
+        user_cfg = hass.data[DATA_CONFIG][print_username]
+
+    if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
+        print_username = privacy_formatter(print_username)
+
+    log_prefix = f'(user|{print_username})'
+
+    _LOGGER.debug('%s Beginning unload procedure', log_prefix)
 
     if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
         # Remove API objects
+        _LOGGER.debug('%s Unloading updater', log_prefix)
         hass.data[DATA_UPDATERS].pop(entry_id)
         if not hass.data[DATA_UPDATERS]:
             del hass.data[DATA_UPDATERS]
 
     if DATA_API_OBJECTS in hass.data and entry_id in hass.data[DATA_API_OBJECTS]:
         # Remove API objects
+        _LOGGER.debug('%s Unloading API object', log_prefix)
         del hass.data[DATA_API_OBJECTS][entry_id]
         if not hass.data[DATA_API_OBJECTS]:
             del hass.data[DATA_API_OBJECTS]
 
     if DATA_ENTITIES in hass.data and entry_id in hass.data[DATA_ENTITIES]:
         # Remove references to created entities
+        _LOGGER.debug('%s Unloading entities', log_prefix)
         del hass.data[DATA_ENTITIES][entry_id]
         hass.async_create_task(
             hass.config_entries.async_forward_entry_unload(
@@ -276,6 +320,15 @@ async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entri
         )
         if not hass.data[DATA_ENTITIES]:
             del hass.data[DATA_ENTITIES]
+
+    if DATA_OPTIONS_LISTENERS in hass.data and entry_id in hass.data[DATA_OPTIONS_LISTENERS]:
+        _LOGGER.debug('%s Unsubscribing options updates', log_prefix)
+        hass.data[DATA_OPTIONS_LISTENERS][entry_id]()
+        del hass.data[DATA_OPTIONS_LISTENERS][entry_id]
+        if not hass.data[DATA_OPTIONS_LISTENERS]:
+            del hass.data[DATA_OPTIONS_LISTENERS]
+
+    _LOGGER.debug('%s Main unload procedure complete', log_prefix)
 
     return True
 
