@@ -502,6 +502,7 @@ class MOGContractSensor(MOGEntity):
 class MOGMeterSensor(MOGEntity):
     """The class for this sensor"""
     SENSOR_TYPE = "meter"
+    UNIQUE_ID_FORMAT = "{sensor_type}_{meter_code}"
 
     def __init__(self, contract: Contract, name_format: str, meter: 'Meter',
                  default_add: bool = DEFAULT_ADD_METERS):
@@ -549,6 +550,7 @@ class MOGMeterSensor(MOGEntity):
 
 class MOGInvoiceSensor(MOGEntity):
     SENSOR_TYPE = "invoice"
+    UNIQUE_ID_FORMAT = "{sensor_type}_{contract_code}_{group_code}"
 
     FRIENDLY_GROUP_NAMES = {
         INVOICE_GROUP_VDGO: 'VDGO',
