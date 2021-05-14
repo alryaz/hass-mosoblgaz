@@ -173,15 +173,19 @@ class MosoblgazAPI:
             session = aiohttp.ClientSession(cookie_jar=self.__cookies, timeout=self.timeout)
             close_session = True
 
-        async with session.get(url) as request:
-            html = await request.text()
-            results = re.search(r'csrf_token"\s+value="([^"]+)', html)
+        try:
+            async with session.get(url) as request:
+                html = await request.text()
+                results = re.search(r'csrf_token"\s+value="([^"]+)', html)
 
-            if results is None:
-                raise AuthenticationFailedException('No CSRF token found')
+                if results is None:
+                    raise AuthenticationFailedException('No CSRF token found')
 
-        if close_session is True:
-            await session.close()
+            if close_session is True:
+                await session.close()
+        except asyncio.TimeoutError:
+            _LOGGER.error('Timeout fetching CSRF token')
+            raise AuthenticationFailedException('Timeout fetching CSRF token')
 
         return results[1]
 
@@ -192,31 +196,35 @@ class MosoblgazAPI:
 
             _LOGGER.debug('Fetched CSRF token: %s' % csrf_token)
 
-            async with session.post(self.AUTH_URL, data={
-                'mog_login[username]': self.__username,
-                'mog_login[password]': self.__password,
-                'mog_login[captcha]': captcha_result or '',
-                '_csrf_token': csrf_token,
-                '_remember_me': 'on',
-            }) as response:
-                if response.status not in [200, 301, 302]:
-                    if _LOGGER.level == logging.DEBUG:
-                        response_text = await response.text()
-                        _LOGGER.debug('Response: %s' % response_text)
+            try:
+                async with session.post(self.AUTH_URL, data={
+                    'mog_login[username]': self.__username,
+                    'mog_login[password]': self.__password,
+                    'mog_login[captcha]': captcha_result or '',
+                    '_csrf_token': csrf_token,
+                    '_remember_me': 'on',
+                }) as response:
+                    if response.status not in [200, 301, 302]:
+                        if _LOGGER.level == logging.DEBUG:
+                            response_text = await response.text()
+                            _LOGGER.debug('Response: %s' % response_text)
 
-                    raise AuthenticationFailedException('Error status (%d)' % response.status)
+                        raise AuthenticationFailedException('Error status (%d)' % response.status)
 
-                _LOGGER.debug('Authentication on account %s successful' % self.__username)
+                    _LOGGER.debug('Authentication on account %s successful' % self.__username)
 
-            async with session.post(self.BASE_URL + '/lkk3/cabinet') as response:
-                graphql_token = response.headers.get('token')
+                async with session.post(self.BASE_URL + '/lkk3/cabinet') as response:
+                    graphql_token = response.headers.get('token')
 
-                if not graphql_token:
-                    raise AuthenticationFailedException('Failed to grab GraphQL token')
+                    if not graphql_token:
+                        raise AuthenticationFailedException('Failed to grab GraphQL token')
 
-                _LOGGER.debug('GraphQL token: %s' % graphql_token)
+                    _LOGGER.debug('GraphQL token: %s' % graphql_token)
 
-                self.__graphql_token = graphql_token
+                    self.__graphql_token = graphql_token
+            except asyncio.TimeoutError:
+                _LOGGER.error('Timeout executing authentication request')
+                raise AuthenticationFailedException('Timeout executing authentication request')
 
     async def perform_single_query(self, query: str, variables: Optional[Dict[str, Any]] = None):
         return (await self.perform_queries([(query, variables)]))[0]
@@ -247,21 +255,25 @@ class MosoblgazAPI:
             if _LOGGER.level == logging.DEBUG:
                 _LOGGER.debug('Sending payload: %s', payload)
 
-            async with session.post(self.BATCH_URL, json=payload) as response:
+            try:
+                async with session.post(self.BATCH_URL, json=payload) as response:
 
-                try:
-                    json_response = await response.json()
+                    try:
+                        json_response = await response.json()
 
-                    if _LOGGER.level == logging.DEBUG:
-                        _LOGGER.debug('Received data: %s', json_response)
+                        if _LOGGER.level == logging.DEBUG:
+                            _LOGGER.debug('Received data: %s', json_response)
 
-                    return list(map(lambda x: x['data'], json_response))
+                        return list(map(lambda x: x['data'], json_response))
 
-                except json.decoder.JSONDecodeError:
-                    if _LOGGER.level == logging.DEBUG:
-                        _LOGGER.debug('Response text: %s', await response.text())
+                    except json.decoder.JSONDecodeError:
+                        if _LOGGER.level == logging.DEBUG:
+                            _LOGGER.debug('Response text: %s', await response.text())
 
-                    raise QueryFailedException('decoding error')
+                        raise QueryFailedException('decoding error')
+            except asyncio.TimeoutError:
+                _LOGGER.error('Timeout executing query')
+                raise QueryFailedException('Timeout executing query')
 
     @property
     def contracts(self) -> Dict[str, 'Contract']:

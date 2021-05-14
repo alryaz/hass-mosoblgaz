@@ -239,16 +239,16 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
 
     except AuthenticationFailedException as e:
         _LOGGER.error(log_prefix + 'Error authenticating: %s', e)
-        return False
+        raise ConfigEntryNotReady
 
     except PartialOfflineException:
         _LOGGER.error('%s Service appears to be partially offline, which prevents '
                       'the component from fetching data. Delaying config entry setup.', log_prefix)
-        raise ConfigEntryNotReady()
+        raise ConfigEntryNotReady
 
     except MosoblgazException as e:
         _LOGGER.error('%s API error with user: "%s"', log_prefix, e)
-        return False
+        raise ConfigEntryNotReady
 
     if not contracts:
         _LOGGER.warning('%s No contracts found under username', log_prefix)
