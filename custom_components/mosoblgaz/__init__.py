@@ -12,6 +12,7 @@ __all__ = [
     'CONFIG_SCHEMA',
 ]
 import logging
+from datetime import timedelta
 from typing import Optional, Union, Any, List, Mapping
 
 import homeassistant.helpers.config_validation as cv
@@ -29,8 +30,6 @@ from .const import *
 from .mosoblgaz import MosoblgazAPI, AuthenticationFailedException, MOSCOW_TIMEZONE, PartialOfflineException
 
 _LOGGER = logging.getLogger(__name__)
-
-POSITIVE_PERIOD_SCHEMA = vol.All(cv.time_period, cv.positive_timedelta)
 
 
 def privacy_formatter(value: Any) -> str:
@@ -100,8 +99,14 @@ OPTIONS_SUBCONFIG = {
 }
 
 INTERVALS_SUBCONFIG = {
-    vol.Optional(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): POSITIVE_PERIOD_SCHEMA,
-    vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): POSITIVE_PERIOD_SCHEMA,
+    vol.Optional(
+        CONF_SCAN_INTERVAL,
+        default=timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+    ): cv.positive_time_period,
+    vol.Optional(
+        CONF_TIMEOUT,
+        default=timedelta(seconds=DEFAULT_TIMEOUT)
+    ): cv.positive_time_period,
 }
 
 
