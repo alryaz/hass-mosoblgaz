@@ -1,6 +1,7 @@
 {
     "domain": "mosoblgaz",
     "name": "Mosoblgaz",
+    "version": "master",
     "documentation": "https://github.com/alryaz/hass-mosoblgaz",
     "dependencies": [],
     "issue_tracker": "https://github.com/alryaz/hass-mosoblgaz/issues",
