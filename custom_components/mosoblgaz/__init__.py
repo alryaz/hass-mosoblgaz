@@ -364,7 +364,7 @@ async def async_unload_entry(
         # Remove references to created entities
         _LOGGER.debug("%s Unloading entities", log_prefix)
         del hass.data[DATA_ENTITIES][entry_id]
-        hass.async_create_task(
+        await hass.async_create_task(
             hass.config_entries.async_forward_entry_unload(config_entry, SENSOR_DOMAIN)
         )
         if not hass.data[DATA_ENTITIES]:
