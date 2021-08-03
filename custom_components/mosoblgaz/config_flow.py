@@ -204,10 +204,8 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
         default_invert_invoices = options.get(
             CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES
         )
-        default_timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT.total_seconds())
-        default_scan_interval = options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL.total_seconds()
-        )
+        default_timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+        default_scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         default_privacy_logging = options.get(
             CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING
         )

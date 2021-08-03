@@ -26,21 +26,21 @@
             "partial_offline": "Сервис Мособлгаза был приостановлен для проведения временных технических работа.\nПожалуйста, попробуйте произвести настройку позднее.",
             "api_error": "Произошла ошибка при обмене данными с API Мособлгаза. Данные об ошибке доступны в логе."
         },
-        "title": "Мособлгаз"
+        "title": "Mosoblgaz"
     },
     "options": {
-        "step": {
-            "user": {
-                "data": {
-                    "invert_invoices": "Показывать положительным избыток на счетах",
-                    "timeout": "Тайм-аут запросов к серверу (в секундах)",
-                    "scan_interval": "Интервал обновления (в секундах)",
-                    "privacy_logging": "Скрывать персональные данные в логах"
-                }
-            },
-            "import": {
-                "description": "*Настройки через интерфейс недоступны при конфигурации через YAML.*\n\nПожалуйста, отредактируйте файл с конфигурацией для изменения параметров."
-            }
-        }
-    }
+         "step": {
+             "user": {
+                 "data": {
+                     "invert_invoices": "Show positive invoice surplus",
+                     "timeout": "Timeout of requests to the server (in seconds)",
+                     "scan_interval": "Update interval (in seconds)",
+                     "privacy_logging": "Hide personal information in logs"
+                 }
+             },
+             "import": {
+                 "description": "*Settings via the interface are not available when configuring via YAML.*\n\nPlease edit the configuration file to change the parameters."
+             }
+         }
+     }
 }
