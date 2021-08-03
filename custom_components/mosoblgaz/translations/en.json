@@ -6,7 +6,7 @@
                     "username": "Username",
                     "password": "Password"
                 },
-                "description": "Введите данные для входа в Ваш личный кабинет Mosoblgaz. По умолчанию, все привязанные к Вашему пользователю аккаунты будут добавлены.",
+                "description": "Enter your login details for your Mosoblgaz account. By default, all accounts linked to your user will be added.",
                 "title": "Mosoblgaz Login"
             },
             "contract": {
@@ -16,15 +16,15 @@
                     "invoices": "Add invoices"
                 },
                 "description": "Choose options for contract no. {{ code }}.\nDisabling contract option will completely disable the contract!",
-                "title": "Contract №{{ code }}"
+                "title": "Contract no. {{ code }}"
             }
         },
         "errors": {
             "invalid_credentials": "Invalid username or password.",
-            "nothing_enabled": "Ни один из контрактов не был выбран к добавлению в систему.",
-            "contracts_missing": "Пользователь не имеет ни одного контракта, который возможно было бы добавить.",
-            "partial_offline": "Сервис Мособлгаза был приостановлен для проведения временных технических работа.\nПожалуйста, попробуйте произвести настройку позднее.",
-            "api_error": "Произошла ошибка при обмене данными с API Мособлгаза. Данные об ошибке доступны в логе."
+            "nothing_enabled": "None of the contracts have been selected to be added to the system.",
+            "contracts_missing": "The user has no contracts to add.",
+            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later.",
+            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log."
         },
         "title": "Mosoblgaz"
     },
