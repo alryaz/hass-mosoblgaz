@@ -3,24 +3,24 @@
         "step": {
             "user": {
                 "data": {
-                    "username": "Имя пользователя",
-                    "password": "Пароль"
+                    "username": "Username",
+                    "password": "Password"
                 },
-                "description": "Введите данные для входа в Ваш личный кабинет Мособлгаз. По умолчанию, все привязанные к Вашему пользователю аккаунты будут добавлены.",
-                "title": "Мособлгаз Вход"
+                "description": "Введите данные для входа в Ваш личный кабинет Mosoblgaz. По умолчанию, все привязанные к Вашему пользователю аккаунты будут добавлены.",
+                "title": "Mosoblgaz Login"
             },
             "contract": {
                 "data": {
-                    "enable_contract": "Добавлять контракт",
-                    "meters": "Добавлять счётчики",
-                    "invoices": "Включить выставленные счета"
+                    "enable_contract": "Add contract",
+                    "meters": "Add meters",
+                    "invoices": "Add invoices"
                 },
-                "description": "Выберите опции контракта №{{ code }}, которые следует применить.\nОтключение добавления контракта также отключает все остальные опции!",
-                "title": "Контракт №{{ code }}"
+                "description": "Choose options for contract no. {{ code }}.\nDisabling contract option will completely disable the contract!",
+                "title": "Contract №{{ code }}"
             }
         },
         "errors": {
-            "invalid_credentials": "Неверное имя пользователя или пароль.",
+            "invalid_credentials": "Invalid username or password.",
             "nothing_enabled": "Ни один из контрактов не был выбран к добавлению в систему.",
             "contracts_missing": "Пользователь не имеет ни одного контракта, который возможно было бы добавить.",
             "partial_offline": "Сервис Мособлгаза был приостановлен для проведения временных технических работа.\nПожалуйста, попробуйте произвести настройку позднее.",

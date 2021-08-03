@@ -1,33 +1,44 @@
 """Mosoblgaz API"""
 __all__ = [
-    'privacy_formatter',
-    'is_privacy_logging_enabled',
-    'get_print_username',
-    'async_setup',
-    'async_setup_entry',
-    'async_unload_entry',
-    'async_update_options',
-    'async_migrate_entry',
-    'DOMAIN',
-    'CONFIG_SCHEMA',
+    "privacy_formatter",
+    "is_privacy_logging_enabled",
+    "get_print_username",
+    "async_setup",
+    "async_setup_entry",
+    "async_unload_entry",
+    "async_update_options",
+    "async_migrate_entry",
+    "DOMAIN",
+    "CONFIG_SCHEMA",
 ]
 import logging
 from datetime import timedelta
 from typing import Optional, Union, Any, List, Mapping
 
+import aiohttp
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
-from homeassistant.const import (CONF_USERNAME, CONF_PASSWORD,
-                                 CONF_SCAN_INTERVAL, CONF_TIMEOUT)
+from homeassistant.const import (
+    CONF_USERNAME,
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
+)
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import HomeAssistantType, ConfigType
 
 from .const import *
-from .mosoblgaz import MosoblgazAPI, AuthenticationFailedException, MOSCOW_TIMEZONE, PartialOfflineException
+from .mosoblgaz import (
+    MosoblgazAPI,
+    AuthenticationFailedException,
+    MOSCOW_TIMEZONE,
+    PartialOfflineException,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,11 +48,13 @@ def privacy_formatter(value: Any) -> str:
     if len(str_value) <= 2:
         return str_value
 
-    suffix = str_value[-max(2, int(round(0.2*len(str_value)))):]
-    return '*' * (len(str_value)-len(suffix)) + suffix
+    suffix = str_value[-max(2, int(round(0.2 * len(str_value)))) :]
+    return "*" * (len(str_value) - len(suffix)) + suffix
 
 
-def is_privacy_logging_enabled(hass: HomeAssistantType, config: Union[ConfigEntry, Mapping[str, Any]]) -> bool:
+def is_privacy_logging_enabled(
+    hass: HomeAssistantType, config: Union[ConfigEntry, Mapping[str, Any]]
+) -> bool:
     if isinstance(config, ConfigEntry):
         if config.source == SOURCE_IMPORT:
             config = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
@@ -51,8 +64,11 @@ def is_privacy_logging_enabled(hass: HomeAssistantType, config: Union[ConfigEntr
     return config.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
 
 
-def get_print_username(hass: HomeAssistantType, config: Union[ConfigEntry, Mapping[str, Any]],
-                       privacy_logging: Optional[bool] = None) -> str:
+def get_print_username(
+    hass: HomeAssistantType,
+    config: Union[ConfigEntry, Mapping[str, Any]],
+    privacy_logging: Optional[bool] = None,
+) -> str:
     if isinstance(config, ConfigEntry):
         username = config.data[CONF_USERNAME]
     else:
@@ -91,7 +107,7 @@ FILTER_SUBCONFIG = {
                 vol.Schema(DEFAULT_FILTER_SUBCONFIG),
             ),
         },
-    )
+    ),
 }
 
 OPTIONS_SUBCONFIG = {
@@ -100,22 +116,22 @@ OPTIONS_SUBCONFIG = {
 
 INTERVALS_SUBCONFIG = {
     vol.Optional(
-        CONF_SCAN_INTERVAL,
-        default=timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+        CONF_SCAN_INTERVAL, default=timedelta(seconds=DEFAULT_SCAN_INTERVAL)
     ): cv.positive_time_period,
     vol.Optional(
-        CONF_TIMEOUT,
-        default=timedelta(seconds=DEFAULT_TIMEOUT)
+        CONF_TIMEOUT, default=timedelta(seconds=DEFAULT_TIMEOUT)
     ): cv.positive_time_period,
 }
 
 
-def _unique_username_validator(configs: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+def _unique_username_validator(
+    configs: List[Mapping[str, Any]]
+) -> List[Mapping[str, Any]]:
     existing_usernames = set()
     exceptions = []
     for i, config in enumerate(configs):
         if config[CONF_USERNAME] in existing_usernames:
-            exceptions.append(vol.Invalid('duplicate username entry detected', [i]))
+            exceptions.append(vol.Invalid("duplicate username entry detected", [i]))
         else:
             existing_usernames.add(config[CONF_USERNAME])
 
@@ -134,7 +150,9 @@ CONFIG_SCHEMA = vol.Schema(
             [
                 vol.Schema(
                     {
-                        vol.Optional(CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING): cv.boolean,
+                        vol.Optional(
+                            CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING
+                        ): cv.boolean,
                         **AUTHENTICATION_SUBCONFIG,
                         **NAME_FORMATS_SUBCONFIG,
                         **FILTER_SUBCONFIG,
@@ -143,7 +161,7 @@ CONFIG_SCHEMA = vol.Schema(
                     }
                 )
             ],
-            _unique_username_validator
+            _unique_username_validator,
         )
     },
     extra=vol.ALLOW_EXTRA,
@@ -151,7 +169,9 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 @callback
-def _find_existing_entry(hass: HomeAssistantType, username: str) -> Optional[config_entries.ConfigEntry]:
+def _find_existing_entry(
+    hass: HomeAssistantType, username: str
+) -> Optional[config_entries.ConfigEntry]:
     existing_entries = hass.config_entries.async_entries(DOMAIN)
     for config_entry in existing_entries:
         if config_entry.data[CONF_USERNAME] == username:
@@ -175,25 +195,25 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
         username = user_cfg[CONF_USERNAME]
 
         # Create logging prefix
-        log_prefix = f'(user|{get_print_username(hass, user_cfg)}) '
+        log_prefix = f"(user|{get_print_username(hass, user_cfg)}) "
 
-        _LOGGER.debug(log_prefix + 'Loading configuration from YAML')
+        _LOGGER.debug(log_prefix + "Loading configuration from YAML")
 
         # Check against internal database for existing entries
         existing_entry = _find_existing_entry(hass, username)
         if existing_entry:
             if existing_entry.source == config_entries.SOURCE_IMPORT:
                 # Do not add duplicate import entry
-                _LOGGER.debug(log_prefix + 'Skipping existing import binding')
+                _LOGGER.debug(log_prefix + "Skipping existing import binding")
                 yaml_config[username] = user_cfg
             else:
                 # Do not add YAML entry override
-                _LOGGER.warning(log_prefix + 'YAML config is overridden via UI!')
+                _LOGGER.warning(log_prefix + "YAML config is overridden via UI!")
             continue
 
         yaml_config[username] = user_cfg
 
-        _LOGGER.debug(log_prefix + 'Creating import entry')
+        _LOGGER.debug(log_prefix + "Creating import entry")
 
         hass.async_create_task(
             hass.config_entries.flow.async_init(
@@ -206,7 +226,9 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
     return True
 
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+async def async_setup_entry(
+    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+):
     """Configuration entry setup procedure"""
     user_cfg = config_entry.data
     username = user_cfg[CONF_USERNAME]
@@ -215,7 +237,10 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
         yaml_config = hass.data.get(DATA_CONFIG)
 
         if not yaml_config or username not in yaml_config:
-            _LOGGER.info('Removing entry %s after removal from YAML configuration.' % config_entry.entry_id)
+            _LOGGER.info(
+                "Removing entry %s after removal from YAML configuration."
+                % config_entry.entry_id
+            )
             hass.async_create_task(
                 hass.config_entries.async_remove(config_entry.entry_id)
             )
@@ -226,65 +251,87 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
     else:
         options_cfg = config_entry.options
 
-    log_prefix = f'(user|{get_print_username(hass, user_cfg)})'
-    _LOGGER.debug('%s Setting up config entry', log_prefix)
+    log_prefix = f"(user|{get_print_username(hass, user_cfg)})"
+    _LOGGER.debug("%s Setting up config entry", log_prefix)
 
     from .mosoblgaz import MosoblgazAPI, MosoblgazException, today_blackout
 
+    timeout = options_cfg.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+    if isinstance(timeout, timedelta):
+        timeout = aiohttp.ClientTimeout(total=timeout.total_seconds())
+    elif isinstance(timeout, (int, float)):
+        timeout = aiohttp.ClientTimeout(total=timeout)
+    else:
+        raise TypeError("Invalid timeout type, report to the developer")
+
+    session = aiohttp.ClientSession(timeout=timeout)
+
     try:
-        api_object = MosoblgazAPI(
-            username=username,
-            password=user_cfg[CONF_PASSWORD],
-            timeout=options_cfg.get(CONF_TIMEOUT, DEFAULT_TIMEOUT),
-        )
+        try:
+            api_object = MosoblgazAPI(
+                username=username,
+                password=user_cfg[CONF_PASSWORD],
+                session=session,
+            )
 
-        await api_object.authenticate()
+            await api_object.authenticate()
 
-        contracts = await api_object.fetch_contracts(with_data=False)
+            contracts = await api_object.fetch_contracts(with_data=False)
 
-    except AuthenticationFailedException as e:
-        _LOGGER.error(log_prefix + 'Error authenticating: %s', e)
-        raise ConfigEntryNotReady
+        except AuthenticationFailedException as e:
+            _LOGGER.error(log_prefix + "Error authenticating: %s", e)
+            raise ConfigEntryNotReady
 
-    except PartialOfflineException:
-        _LOGGER.error('%s Service appears to be partially offline, which prevents '
-                      'the component from fetching data. Delaying config entry setup.', log_prefix)
-        raise ConfigEntryNotReady
+        except PartialOfflineException:
+            _LOGGER.error(
+                "%s Service appears to be partially offline, which prevents "
+                "the component from fetching data. Delaying config entry setup.",
+                log_prefix,
+            )
+            raise ConfigEntryNotReady
 
-    except MosoblgazException as e:
-        _LOGGER.error('%s API error with user: "%s"', log_prefix, e)
-        raise ConfigEntryNotReady
+        except MosoblgazException as e:
+            _LOGGER.error('%s API error with user: "%s"', log_prefix, e)
+            raise ConfigEntryNotReady
+
+    except BaseException:
+        await session.close()
+        raise
 
     if not contracts:
-        _LOGGER.warning('%s No contracts found under username', log_prefix)
+        _LOGGER.warning("%s No contracts found under username", log_prefix)
+        await session.close()
         return False
 
     hass.data.setdefault(DATA_API_OBJECTS, {})[config_entry.entry_id] = api_object
 
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(
-            config_entry,
-            SENSOR_DOMAIN
-        )
+        hass.config_entries.async_forward_entry_setup(config_entry, SENSOR_DOMAIN)
     )
 
-    _LOGGER.debug('%s Attaching options update listener')
+    _LOGGER.debug("%s Attaching options update listener", log_prefix)
     options_listener = config_entry.add_update_listener(async_update_options)
-    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[config_entry.entry_id] = options_listener
+    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[
+        config_entry.entry_id
+    ] = options_listener
 
-    _LOGGER.debug('%s Successfully set up account', log_prefix)
+    _LOGGER.debug("%s Successfully set up account", log_prefix)
 
     return True
 
 
-async def async_update_options(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+async def async_update_options(
+    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+):
     """React to options update"""
-    log_prefix = f'(user|{get_print_username(hass, config_entry)})'
-    _LOGGER.debug('%s Reloading configuration entry due to options update', log_prefix)
+    log_prefix = f"(user|{get_print_username(hass, config_entry)})"
+    _LOGGER.debug("%s Reloading configuration entry due to options update", log_prefix)
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry) -> bool:
+async def async_unload_entry(
+    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+) -> bool:
     entry_id = config_entry.entry_id
     user_cfg = config_entry.data
     print_username = user_cfg[CONF_USERNAME]
@@ -295,67 +342,71 @@ async def async_unload_entry(hass: HomeAssistantType, config_entry: config_entri
     if user_cfg.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
         print_username = privacy_formatter(print_username)
 
-    log_prefix = f'(user|{print_username})'
+    log_prefix = f"(user|{print_username})"
 
-    _LOGGER.debug('%s Beginning unload procedure', log_prefix)
+    _LOGGER.debug("%s Beginning unload procedure", log_prefix)
 
     if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
         # Remove API objects
-        _LOGGER.debug('%s Unloading updater', log_prefix)
+        _LOGGER.debug("%s Unloading updater", log_prefix)
         hass.data[DATA_UPDATERS].pop(entry_id)
         if not hass.data[DATA_UPDATERS]:
             del hass.data[DATA_UPDATERS]
 
     if DATA_API_OBJECTS in hass.data and entry_id in hass.data[DATA_API_OBJECTS]:
         # Remove API objects
-        _LOGGER.debug('%s Unloading API object', log_prefix)
+        _LOGGER.debug("%s Unloading API object", log_prefix)
         del hass.data[DATA_API_OBJECTS][entry_id]
         if not hass.data[DATA_API_OBJECTS]:
             del hass.data[DATA_API_OBJECTS]
 
     if DATA_ENTITIES in hass.data and entry_id in hass.data[DATA_ENTITIES]:
         # Remove references to created entities
-        _LOGGER.debug('%s Unloading entities', log_prefix)
+        _LOGGER.debug("%s Unloading entities", log_prefix)
         del hass.data[DATA_ENTITIES][entry_id]
         hass.async_create_task(
-            hass.config_entries.async_forward_entry_unload(
-                config_entry,
-                SENSOR_DOMAIN
-            )
+            hass.config_entries.async_forward_entry_unload(config_entry, SENSOR_DOMAIN)
         )
         if not hass.data[DATA_ENTITIES]:
             del hass.data[DATA_ENTITIES]
 
-    if DATA_OPTIONS_LISTENERS in hass.data and entry_id in hass.data[DATA_OPTIONS_LISTENERS]:
-        _LOGGER.debug('%s Unsubscribing options updates', log_prefix)
+    if (
+        DATA_OPTIONS_LISTENERS in hass.data
+        and entry_id in hass.data[DATA_OPTIONS_LISTENERS]
+    ):
+        _LOGGER.debug("%s Unsubscribing options updates", log_prefix)
         hass.data[DATA_OPTIONS_LISTENERS][entry_id]()
         del hass.data[DATA_OPTIONS_LISTENERS][entry_id]
         if not hass.data[DATA_OPTIONS_LISTENERS]:
             del hass.data[DATA_OPTIONS_LISTENERS]
 
-    _LOGGER.debug('%s Main unload procedure complete', log_prefix)
+    _LOGGER.debug("%s Main unload procedure complete", log_prefix)
 
     return True
 
 
-async def async_migrate_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry) -> bool:
+async def async_migrate_entry(
+    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+) -> bool:
     current_version = config_entry.version
     update_args = {}
     old_data = config_entry.data
 
-    _LOGGER.debug('Migrating entry "%s" (type="%s") from version %s',
-                  config_entry.entry_id,
-                  config_entry.source,
-                  current_version)
+    _LOGGER.debug(
+        'Migrating entry "%s" (type="%s") from version %s',
+        config_entry.entry_id,
+        config_entry.source,
+        current_version,
+    )
 
     if current_version == 1:
         if config_entry.source != SOURCE_IMPORT:
-            new_data = update_args.setdefault('data', {})
+            new_data = update_args.setdefault("data", {})
             new_data[CONF_USERNAME] = old_data[CONF_USERNAME]
             new_data[CONF_PASSWORD] = old_data[CONF_PASSWORD]
 
             if CONF_INVERT_INVOICES in old_data:
-                new_options = update_args.setdefault('options', {})
+                new_options = update_args.setdefault("options", {})
                 new_options[CONF_INVERT_INVOICES] = old_data[CONF_INVERT_INVOICES]
 
         current_version = 2
@@ -366,7 +417,9 @@ async def async_migrate_entry(hass: HomeAssistantType, config_entry: config_entr
         _LOGGER.debug('Updating configuration entry "%s" with new data')
         hass.config_entries.async_update_entry(config_entry, **update_args)
 
-    _LOGGER.debug('Migration of entry "%s" to version %s successful',
-                  config_entry.entry_id,
-                  current_version)
+    _LOGGER.debug(
+        'Migration of entry "%s" to version %s successful',
+        config_entry.entry_id,
+        current_version,
+    )
     return True
