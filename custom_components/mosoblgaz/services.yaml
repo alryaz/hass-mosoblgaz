@@ -5,10 +5,10 @@ push_indications:
       device_class: mosoblgaz_meter
   fields:
     indications:
-      description: 'Список показаний (от 1 до 3) для тарифов: T1, T2, T3'
+      description: 'Показание'
       required: true
       advanced: false
-      example: '123, 456, 789'
+      example: '123'
       selector:
         text:
           multiline: false
