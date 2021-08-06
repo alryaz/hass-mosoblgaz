@@ -11,32 +11,27 @@ __all__ = [
     "DOMAIN",
     "CONFIG_SCHEMA",
 ]
+
 import logging
 from datetime import timedelta
-from typing import Optional, Union, Any, List, Mapping
+from typing import Any, List, Mapping, Optional, Union
 
 import aiohttp
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
-from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
-from homeassistant.const import (
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_SCAN_INTERVAL,
-    CONF_TIMEOUT,
-)
+from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
+from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_USERNAME
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.typing import HomeAssistantType, ConfigType
+from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 
 from .const import *
 from .mosoblgaz import (
-    MosoblgazAPI,
     AuthenticationFailedException,
     MOSCOW_TIMEZONE,
+    MosoblgazAPI,
     PartialOfflineException,
 )
 
@@ -118,15 +113,11 @@ INTERVALS_SUBCONFIG = {
     vol.Optional(
         CONF_SCAN_INTERVAL, default=timedelta(seconds=DEFAULT_SCAN_INTERVAL)
     ): cv.positive_time_period,
-    vol.Optional(
-        CONF_TIMEOUT, default=timedelta(seconds=DEFAULT_TIMEOUT)
-    ): cv.positive_time_period,
+    vol.Optional(CONF_TIMEOUT, default=timedelta(seconds=DEFAULT_TIMEOUT)): cv.positive_time_period,
 }
 
 
-def _unique_username_validator(
-    configs: List[Mapping[str, Any]]
-) -> List[Mapping[str, Any]]:
+def _unique_username_validator(configs: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
     existing_usernames = set()
     exceptions = []
     for i, config in enumerate(configs):
@@ -226,9 +217,7 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
     return True
 
 
-async def async_setup_entry(
-    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
-):
+async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
     """Configuration entry setup procedure"""
     user_cfg = config_entry.data
     username = user_cfg[CONF_USERNAME]
@@ -238,12 +227,9 @@ async def async_setup_entry(
 
         if not yaml_config or username not in yaml_config:
             _LOGGER.info(
-                "Removing entry %s after removal from YAML configuration."
-                % config_entry.entry_id
+                "Removing entry %s after removal from YAML configuration." % config_entry.entry_id
             )
-            hass.async_create_task(
-                hass.config_entries.async_remove(config_entry.entry_id)
-            )
+            hass.async_create_task(hass.config_entries.async_remove(config_entry.entry_id))
             return False
 
         user_cfg = yaml_config[username]
@@ -311,18 +297,14 @@ async def async_setup_entry(
 
     _LOGGER.debug("%s Attaching options update listener", log_prefix)
     options_listener = config_entry.add_update_listener(async_update_options)
-    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[
-        config_entry.entry_id
-    ] = options_listener
+    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[config_entry.entry_id] = options_listener
 
     _LOGGER.debug("%s Successfully set up account", log_prefix)
 
     return True
 
 
-async def async_update_options(
-    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
-):
+async def async_update_options(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
     """React to options update"""
     log_prefix = f"(user|{get_print_username(hass, config_entry)})"
     _LOGGER.debug("%s Reloading configuration entry due to options update", log_prefix)
@@ -349,7 +331,9 @@ async def async_unload_entry(
     if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
         # Remove API objects
         _LOGGER.debug("%s Unloading updater", log_prefix)
-        hass.data[DATA_UPDATERS].pop(entry_id)
+        updater_cancel = hass.data[DATA_UPDATERS].pop(entry_id)
+        if updater_cancel:
+            updater_cancel()
         if not hass.data[DATA_UPDATERS]:
             del hass.data[DATA_UPDATERS]
 
@@ -370,10 +354,7 @@ async def async_unload_entry(
         if not hass.data[DATA_ENTITIES]:
             del hass.data[DATA_ENTITIES]
 
-    if (
-        DATA_OPTIONS_LISTENERS in hass.data
-        and entry_id in hass.data[DATA_OPTIONS_LISTENERS]
-    ):
+    if DATA_OPTIONS_LISTENERS in hass.data and entry_id in hass.data[DATA_OPTIONS_LISTENERS]:
         _LOGGER.debug("%s Unsubscribing options updates", log_prefix)
         hass.data[DATA_OPTIONS_LISTENERS][entry_id]()
         del hass.data[DATA_OPTIONS_LISTENERS][entry_id]
