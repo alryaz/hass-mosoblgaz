@@ -11,7 +11,6 @@ from typing import Any, Callable, Dict, Final, Iterable, List, Mapping, Optional
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.components import persistent_notification
 from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.const import ATTR_ATTRIBUTION, ATTR_ENTITY_ID, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.exceptions import PlatformNotReady
@@ -46,29 +45,30 @@ INDICATIONS_SEQUENCE_SCHEMA = vol.All(
     lambda x: dict(map(lambda y: ("t" + str(y[0]), y[1]), enumerate(x, start=1))),
 )
 
-ATTR_NOTIFICATION: Final = "notification"
 ATTR_IGNORE_INDICATIONS: Final = "ignore_indications"
 ATTR_INCREMENTAL: Final = "incremental"
 
 SERVICE_PUSH_INDICATIONS: Final = "push_indications"
-SERVICE_PUSH_INDICATIONS_SCHEMA: Final = {
-    vol.Required(ATTR_INDICATIONS): vol.Any(
-        vol.All(
-            cv.string,
-            lambda x: list(map(str.strip, x.split(","))),
-            INDICATIONS_SEQUENCE_SCHEMA,
-        ),
-        INDICATIONS_MAPPING_SCHEMA,
-        INDICATIONS_SEQUENCE_SCHEMA,
+SERVICE_PUSH_INDICATIONS_SCHEMA: Final = vol.All(
+    cv.make_entity_service_schema(
+        {
+            vol.Required(ATTR_INDICATIONS): vol.Any(
+                vol.All(
+                    cv.string,
+                    lambda x: list(map(str.strip, x.split(","))),
+                    INDICATIONS_SEQUENCE_SCHEMA,
+                ),
+                INDICATIONS_MAPPING_SCHEMA,
+                INDICATIONS_SEQUENCE_SCHEMA,
+            ),
+            # vol.Optional(ATTR_IGNORE_PERIOD, default=False): cv.boolean,
+            vol.Optional(ATTR_IGNORE_INDICATIONS, default=False): cv.boolean,
+            vol.Optional(ATTR_INCREMENTAL, default=False): cv.boolean,
+            vol.Optional("notification"): lambda x: x,
+        }
     ),
-    # vol.Optional(ATTR_IGNORE_PERIOD, default=False): cv.boolean,
-    vol.Optional(ATTR_IGNORE_INDICATIONS, default=False): cv.boolean,
-    vol.Optional(ATTR_INCREMENTAL, default=False): cv.boolean,
-    vol.Optional(ATTR_NOTIFICATION, default=False): vol.Any(
-        cv.boolean,
-        persistent_notification.SCHEMA_SERVICE_CREATE,
-    ),
-}
+    cv.deprecated("notification"),
+)
 
 
 def get_should_add_entities(
@@ -714,27 +714,6 @@ class MOGMeterSensor(MOGEntity):
         _LOGGER.debug("Firing event '%s' with post_fields: %s" % (event_id, event_data))
 
         hass.bus.async_fire(event_type=event_id, event_data=event_data)
-
-        notification_content: Union[bool, Mapping[str, str]] = call_data[ATTR_NOTIFICATION]
-
-        if notification_content is not False:
-            payload = {
-                persistent_notification.ATTR_TITLE: title + " - №" + meter_code,
-                persistent_notification.ATTR_NOTIFICATION_ID: event_id + "_" + meter_code,
-                persistent_notification.ATTR_MESSAGE: message,
-            }
-
-            if isinstance(notification_content, Mapping):
-                for key, value in notification_content.items():
-                    payload[key] = str(value).format_map(event_data)
-
-            hass.async_create_task(
-                hass.services.async_call(
-                    persistent_notification.DOMAIN,
-                    persistent_notification.SERVICE_CREATE,
-                    payload,
-                )
-            )
 
     @staticmethod
     def _get_real_indications(meter: Meter, call_data: Mapping) -> Mapping[str, Union[int, float]]:
