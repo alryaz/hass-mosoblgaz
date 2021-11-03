@@ -9,6 +9,9 @@
         "@alryaz"
     ],
     "config_flow": true,
-    "requirements": ["python-dateutil==2.8.1"],
+    "requirements": [
+        "python-dateutil==2.8.1"
+    ],
     "iot_class": "cloud_polling"
 }
+

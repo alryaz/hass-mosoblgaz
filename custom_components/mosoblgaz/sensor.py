@@ -6,35 +6,34 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from functools import partial
-from typing import Dict, Final, Optional, Tuple, Union, List, Any, Mapping, Type, Callable, Iterable
+from typing import Any, Callable, Dict, Final, Iterable, List, Mapping, Optional, Tuple, Type, Union
 
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import SOURCE_IMPORT
-from homeassistant.const import ATTR_ENTITY_ID, CONF_USERNAME, CONF_SCAN_INTERVAL, ATTR_ATTRIBUTION
+from homeassistant.const import ATTR_ATTRIBUTION, ATTR_ENTITY_ID, CONF_SCAN_INTERVAL, CONF_USERNAME
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.typing import HomeAssistantType, ConfigType
+from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 
-from . import privacy_formatter, get_print_username, is_privacy_logging_enabled
+from . import get_print_username, is_privacy_logging_enabled, privacy_formatter
 from .const import *
 from .mosoblgaz import (
+    Contract,
+    INVOICE_GROUP_GAS,
+    INVOICE_GROUP_TECH,
+    INVOICE_GROUP_VDGO,
+    Invoice,
+    Meter,
     MosoblgazAPI,
     MosoblgazException,
-    Meter,
-    Invoice,
-    Contract,
     PartialOfflineException,
-    INVOICE_GROUP_VDGO,
-    INVOICE_GROUP_TECH,
-    INVOICE_GROUP_GAS,
 )
 
 _LOGGER = logging.getLogger(__name__)
-
 
 INDICATIONS_MAPPING_SCHEMA = vol.Schema(
     {
