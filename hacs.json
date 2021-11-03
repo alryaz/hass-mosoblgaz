@@ -2,7 +2,7 @@
   "name": "Mosoblgaz (Мособлгаз)",
   "content_in_root": false,
   "zip_release": false,
-  "render_readme": false,
+  "render_readme": true,
   "domains": ["sensor"],
   "country": "ru",
   "homeassistant": "0.109.0",
