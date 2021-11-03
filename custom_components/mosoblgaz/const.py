@@ -8,18 +8,18 @@ CONF_INVOICE_NAME = "invoice_name"
 CONF_INVERT_INVOICES = "invert_invoices"
 CONF_PRIVACY_LOGGING = "privacy_logging"
 
-DOMAIN = 'mosoblgaz'
-DATA_CONFIG = DOMAIN + '_config'
-DATA_API_OBJECTS = DOMAIN + '_api_objects'
-DATA_ENTITIES = DOMAIN + '_entities'
-DATA_UPDATERS = DOMAIN + '_updaters'
-DATA_OPTIONS_LISTENERS = DOMAIN + '_options_listeners'
+DOMAIN = "mosoblgaz"
+DATA_CONFIG = DOMAIN + "_config"
+DATA_API_OBJECTS = DOMAIN + "_api_objects"
+DATA_ENTITIES = DOMAIN + "_entities"
+DATA_UPDATERS = DOMAIN + "_updaters"
+DATA_OPTIONS_LISTENERS = DOMAIN + "_options_listeners"
 
-DEFAULT_SCAN_INTERVAL = 60*60  # 1 hour
+DEFAULT_SCAN_INTERVAL = 60 * 60  # 1 hour
 DEFAULT_TIMEOUT = 30  # 30 seconds
-DEFAULT_CONTRACT_NAME_FORMAT = 'MOG Contract {contract_code}'
-DEFAULT_METER_NAME_FORMAT = 'MOG Meter {meter_code}'
-DEFAULT_INVOICE_NAME_FORMAT = 'MOG {group} Invoice {contract_code}'
+DEFAULT_CONTRACT_NAME_FORMAT = "MOG Contract {contract_code}"
+DEFAULT_METER_NAME_FORMAT = "MOG Meter {meter_code}"
+DEFAULT_INVOICE_NAME_FORMAT = "MOG {group} Invoice {contract_code}"
 DEFAULT_INVERT_INVOICES = False
 DEFAULT_ADD_INVOICES = True
 DEFAULT_ADD_METERS = True
@@ -29,8 +29,8 @@ DEFAULT_PRIVACY_LOGGING = False
 ATTRIBUTION = "Data provided by Mosoblgaz"
 RUB_CURRENCY = "руб."
 
-ENTITIES_CONTRACT = 'contract'
-ENTITIES_METER_TARIFF = 'meter_tariff'
+ENTITIES_CONTRACT = "contract"
+ENTITIES_METER_TARIFF = "meter_tariff"
 
 ATTR_INDICATIONS = "indications"
 ATTR_IGNORE_PERIOD = "ignore_period"

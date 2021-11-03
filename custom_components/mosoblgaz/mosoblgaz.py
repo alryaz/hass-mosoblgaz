@@ -531,7 +531,10 @@ class MosoblgazAPI:
                 "date": date_.isoformat(),
                 "value": str(int(value)),
             },
-            headers={"X-SYSTEM-AUTH": x_system_auth_token, "token": self.__graphql_token},
+            headers={
+                "X-SYSTEM-AUTH": x_system_auth_token,
+                "token": self.__graphql_token,
+            },
             allow_redirects=False,
         ) as response:
             json_data = await response.json()
