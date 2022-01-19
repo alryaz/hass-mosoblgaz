@@ -1,13 +1,15 @@
 [<img src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/header.png" height="100">](https://mosoblgaz.ru/)
-# _Мособлгаз_ для HomeAssistant
+# _Мособлгаз_ для Home Assistant
 > Предоставление информации о текущем состоянии ваших контрактов с Мособлгаз.
 >
->[![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
+>[![hacs_badge](https://img.shields.io/badge/HACS-Default-green.svg)](https://github.com/custom-components/hacs)
 >[![Лицензия](https://img.shields.io/badge/%D0%9B%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 >[![Поддержка](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B8%D0%B2%D0%B0%D0%B5%D1%82%D1%81%D1%8F%3F-%D0%B4%D0%B0-green.svg)](https://github.com/alryaz/hass-mosoblgaz/graphs/commit-activity)
 >
 >[![Пожертвование Yandex](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B6%D0%B5%D1%80%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-Yandex-red.svg)](https://money.yandex.ru/to/410012369233217)
 >[![Пожертвование PayPal](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B6%D0%B5%D1%80%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-Paypal-blueviolet.svg)](https://www.paypal.me/alryaz)
+
+> **Техническая поддержка:** [![Группа в Telegram](https://img.shields.io/endpoint?url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Falryaz_ha_addons)](https://telegram.dog/alryaz_ha_addons)
 
 Данная интеграция предоставляет возможность системе HomeAssistant опрашивать API Мособлгаза.
 
@@ -27,15 +29,15 @@
    1. Теперь вы должны видеть доступную интеграцию `Mosoblgaz (Мособлгаз)` в списке новых интеграций.
 1. Нажмите кнопку `Install` чтобы увидеть доступные версии
 1. Установите последнюю версию нажатием кнопки `Install`
-1. Перезапустите HomeAssistant
+1. Перезапустите Home Assistant
 
 _Примечание:_ Не рекомендуется устанавливать ветку `master`. Она используется исключительно для разработки. 
 
 ### Вручную
 Клонируйте репозиторий во временный каталог, затем создайте каталог `custom_components` внутри папки конфигурации
-вашего HomeAssistant (если она еще не существует). Затем переместите папку `mosoblgaz` из папки `custom_components` 
-репозитория в папку `custom_components` внутри папки конфигурации HomeAssistant.
-Пример (при условии, что конфигурация HomeAssistant доступна по адресу `/mnt/homeassistant/config`) для Unix-систем:
+вашего Home Assistant (если она еще не существует). Затем переместите папку `mosoblgaz` из папки `custom_components` 
+репозитория в папку `custom_components` внутри папки конфигурации Home Assistant.
+Пример (при условии, что конфигурация Home Assistant доступна по адресу `/mnt/homeassistant/config`) для Unix-систем:
 ```
 git clone https://github.com/alryaz/hass-mosoblgaz.git hass-mosoblgaz
 mkdir -p /mnt/homeassistant/config/custom_components
@@ -43,7 +45,10 @@ mv hass-mosoblgaz/custom_components/mosoblgaz /mnt/homeassistant/config/custom_c
 ```
 
 ## Конфигурация
-### Через интерфейс HomeAssistant
+### Через интерфейс Home Assistant
+
+[![​Open your Home Assistant instance and start setting up a new integration.​](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=mosoblgaz)
+
 1. Откройте `Настройки` -> `Интеграции`
 1. Нажмите внизу справа страницы кнопку с плюсом
 1. Введите в поле поиска `Mosoblgaz` или `Мособлгаз`
@@ -195,7 +200,8 @@ mosoblgaz:
 При использовании компонента в сети с низкой пропускной способностью и высокими задержками, запросы могут переставать
 быть отвеченными сервером. Возможно увеличить время ожидания ответа от сервера путём указания параметра ниже.
 
-**Важно!** Значение параметра не должно превышать интервал обновления.
+> **Важно!** Значение параметра не должно превышать интервал обновления.
+
 ```yaml
 mosoblgaz:
   ...
@@ -207,7 +213,8 @@ mosoblgaz:
   # ... также возможно задать секундами
   timeout: 60
 ```
-*N.B.* Данная опция также доступна в меню "Настройки" интеграции (при настройке через UI)
+
+> *N.B.* Данная опция также доступна в меню "Настройки" интеграции (при настройке через UI)
 
 #### Логирование без личных данных
 При написании багрепорта требуется добавить вывод лог-файлов. Если Вы желаете скрыть Ваши личные данные из этих
@@ -224,4 +231,5 @@ mosoblgaz:
   # Invert invoice values
   privacy_logging: true
 ```
-*N.B.* Данная опция также доступна в меню "Настройки" интеграции (при настройке через UI)
+
+> *N.B.* Данная опция также доступна в меню "Настройки" интеграции (при настройке через UI)
