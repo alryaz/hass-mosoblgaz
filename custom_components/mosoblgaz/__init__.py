@@ -22,7 +22,12 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
-from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_USERNAME
+from homeassistant.const import (
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
+    CONF_USERNAME,
+)
 from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
@@ -52,7 +57,9 @@ def is_privacy_logging_enabled(
 ) -> bool:
     if isinstance(config, ConfigEntry):
         if config.source == SOURCE_IMPORT:
-            config = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
+            config = hass.data.get(DATA_CONFIG, {}).get(
+                config.data[CONF_USERNAME], {}
+            )
         else:
             config = config.options
 
@@ -81,9 +88,15 @@ AUTHENTICATION_SUBCONFIG = {
 }
 
 NAME_FORMATS_SUBCONFIG = {
-    vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
-    vol.Optional(CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT): cv.string,
-    vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
+    vol.Optional(
+        CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT
+    ): cv.string,
+    vol.Optional(
+        CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT
+    ): cv.string,
+    vol.Optional(
+        CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT
+    ): cv.string,
 }
 
 DEFAULT_FILTER_SUBCONFIG = {
@@ -106,23 +119,31 @@ FILTER_SUBCONFIG = {
 }
 
 OPTIONS_SUBCONFIG = {
-    vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
+    vol.Optional(
+        CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES
+    ): cv.boolean,
 }
 
 INTERVALS_SUBCONFIG = {
     vol.Optional(
         CONF_SCAN_INTERVAL, default=timedelta(seconds=DEFAULT_SCAN_INTERVAL)
     ): cv.positive_time_period,
-    vol.Optional(CONF_TIMEOUT, default=timedelta(seconds=DEFAULT_TIMEOUT)): cv.positive_time_period,
+    vol.Optional(
+        CONF_TIMEOUT, default=timedelta(seconds=DEFAULT_TIMEOUT)
+    ): cv.positive_time_period,
 }
 
 
-def _unique_username_validator(configs: List[Mapping[str, Any]]) -> List[Mapping[str, Any]]:
+def _unique_username_validator(
+    configs: List[Mapping[str, Any]]
+) -> List[Mapping[str, Any]]:
     existing_usernames = set()
     exceptions = []
     for i, config in enumerate(configs):
         if config[CONF_USERNAME] in existing_usernames:
-            exceptions.append(vol.Invalid("duplicate username entry detected", [i]))
+            exceptions.append(
+                vol.Invalid("duplicate username entry detected", [i])
+            )
         else:
             existing_usernames.add(config[CONF_USERNAME])
 
@@ -142,7 +163,8 @@ CONFIG_SCHEMA = vol.Schema(
                 vol.Schema(
                     {
                         vol.Optional(
-                            CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING
+                            CONF_PRIVACY_LOGGING,
+                            default=DEFAULT_PRIVACY_LOGGING,
                         ): cv.boolean,
                         **AUTHENTICATION_SUBCONFIG,
                         **NAME_FORMATS_SUBCONFIG,
@@ -199,7 +221,9 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
                 yaml_config[username] = user_cfg
             else:
                 # Do not add YAML entry override
-                _LOGGER.warning(log_prefix + "YAML config is overridden via UI!")
+                _LOGGER.warning(
+                    log_prefix + "YAML config is overridden via UI!"
+                )
             continue
 
         yaml_config[username] = user_cfg
@@ -217,7 +241,9 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
     return True
 
 
-async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+async def async_setup_entry(
+    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+):
     """Configuration entry setup procedure"""
     user_cfg = config_entry.data
     username = user_cfg[CONF_USERNAME]
@@ -227,9 +253,12 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
 
         if not yaml_config or username not in yaml_config:
             _LOGGER.info(
-                "Removing entry %s after removal from YAML configuration." % config_entry.entry_id
+                "Removing entry %s after removal from YAML configuration."
+                % config_entry.entry_id
             )
-            hass.async_create_task(hass.config_entries.async_remove(config_entry.entry_id))
+            hass.async_create_task(
+                hass.config_entries.async_remove(config_entry.entry_id)
+            )
             return False
 
         user_cfg = yaml_config[username]
@@ -289,25 +318,35 @@ async def async_setup_entry(hass: HomeAssistantType, config_entry: config_entrie
         await session.close()
         return False
 
-    hass.data.setdefault(DATA_API_OBJECTS, {})[config_entry.entry_id] = api_object
+    hass.data.setdefault(DATA_API_OBJECTS, {})[
+        config_entry.entry_id
+    ] = api_object
 
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, SENSOR_DOMAIN)
+        hass.config_entries.async_forward_entry_setup(
+            config_entry, SENSOR_DOMAIN
+        )
     )
 
     _LOGGER.debug("%s Attaching options update listener", log_prefix)
     options_listener = config_entry.add_update_listener(async_update_options)
-    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[config_entry.entry_id] = options_listener
+    hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[
+        config_entry.entry_id
+    ] = options_listener
 
     _LOGGER.debug("%s Successfully set up account", log_prefix)
 
     return True
 
 
-async def async_update_options(hass: HomeAssistantType, config_entry: config_entries.ConfigEntry):
+async def async_update_options(
+    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+):
     """React to options update"""
     log_prefix = f"(user|{get_print_username(hass, config_entry)})"
-    _LOGGER.debug("%s Reloading configuration entry due to options update", log_prefix)
+    _LOGGER.debug(
+        "%s Reloading configuration entry due to options update", log_prefix
+    )
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 
@@ -337,7 +376,10 @@ async def async_unload_entry(
         if not hass.data[DATA_UPDATERS]:
             del hass.data[DATA_UPDATERS]
 
-    if DATA_API_OBJECTS in hass.data and entry_id in hass.data[DATA_API_OBJECTS]:
+    if (
+        DATA_API_OBJECTS in hass.data
+        and entry_id in hass.data[DATA_API_OBJECTS]
+    ):
         # Remove API objects
         _LOGGER.debug("%s Unloading API object", log_prefix)
         del hass.data[DATA_API_OBJECTS][entry_id]
@@ -349,12 +391,17 @@ async def async_unload_entry(
         _LOGGER.debug("%s Unloading entities", log_prefix)
         del hass.data[DATA_ENTITIES][entry_id]
         await hass.async_create_task(
-            hass.config_entries.async_forward_entry_unload(config_entry, SENSOR_DOMAIN)
+            hass.config_entries.async_forward_entry_unload(
+                config_entry, SENSOR_DOMAIN
+            )
         )
         if not hass.data[DATA_ENTITIES]:
             del hass.data[DATA_ENTITIES]
 
-    if DATA_OPTIONS_LISTENERS in hass.data and entry_id in hass.data[DATA_OPTIONS_LISTENERS]:
+    if (
+        DATA_OPTIONS_LISTENERS in hass.data
+        and entry_id in hass.data[DATA_OPTIONS_LISTENERS]
+    ):
         _LOGGER.debug("%s Unsubscribing options updates", log_prefix)
         hass.data[DATA_OPTIONS_LISTENERS][entry_id]()
         del hass.data[DATA_OPTIONS_LISTENERS][entry_id]
@@ -388,7 +435,9 @@ async def async_migrate_entry(
 
             if CONF_INVERT_INVOICES in old_data:
                 new_options = update_args.setdefault("options", {})
-                new_options[CONF_INVERT_INVOICES] = old_data[CONF_INVERT_INVOICES]
+                new_options[CONF_INVERT_INVOICES] = old_data[
+                    CONF_INVERT_INVOICES
+                ]
 
         current_version = 2
 

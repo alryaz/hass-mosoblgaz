@@ -22,7 +22,9 @@ INVOICE_GROUPS = (INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH)
 
 
 def convert_date_dict(date_dict: Dict[str, Union[str, int]]) -> datetime:
-    return datetime.fromisoformat(date_dict["date"]).replace(tzinfo=gettz(date_dict["timezone"]))
+    return datetime.fromisoformat(date_dict["date"]).replace(
+        tzinfo=gettz(date_dict["timezone"])
+    )
 
 
 MOSCOW_TIMEZONE = gettz("Europe/Moscow")
@@ -64,7 +66,11 @@ class Queries:
         indent_level: int = 0,
         indent_str: str = " ",
     ) -> str:
-        buffer = "{" if section is None else indent_str * indent_level + section + " {"
+        buffer = (
+            "{"
+            if section is None
+            else indent_str * indent_level + section + " {"
+        )
 
         indent_level += 1
         for sub_query in queries:
@@ -73,7 +79,9 @@ class Queries:
                     section_name = (
                         sub_query[0][0]
                         + "("
-                        + ", ".join(["%s: $%s" % v for v in sub_query[0][1].items()])
+                        + ", ".join(
+                            ["%s: $%s" % v for v in sub_query[0][1].items()]
+                        )
                         + ")"
                     )
                 else:
@@ -98,7 +106,9 @@ class Queries:
             raise ValueError('%s does not have "%s" query' % cls.__name__)
 
         prefix = (
-            "" if use_name is False else "query %s " % (template if use_name is True else use_name)
+            ""
+            if use_name is False
+            else "query %s " % (template if use_name is True else use_name)
         )
 
         if template in cls._compiled_queries:
@@ -109,7 +119,9 @@ class Queries:
             if isinstance(template_format, tuple):
                 compiled_query = (
                     "("
-                    + ", ".join(["$%s: %s" % v for v in template_format[0].items()])
+                    + ", ".join(
+                        ["$%s: %s" % v for v in template_format[0].items()]
+                    )
                     + ")"
                     + cls.compile_sub_query(template_format[1])
                 )
@@ -124,7 +136,15 @@ class Queries:
     messagesCount = [
         (
             "messages",
-            ["id", "level", "sticky", "tag", "text", "type", "textAsJsonArray"],
+            [
+                "id",
+                "level",
+                "sticky",
+                "tag",
+                "text",
+                "type",
+                "textAsJsonArray",
+            ],
         ),
     ]
     initialData = [
@@ -194,7 +214,10 @@ class Queries:
                                                 "sch",
                                                 [
                                                     "number",
-                                                    ("data", ["Id", "Cost", "Dim"]),
+                                                    (
+                                                        "data",
+                                                        ["Id", "Cost", "Dim"],
+                                                    ),
                                                 ],
                                             ),
                                         ],
@@ -282,30 +305,40 @@ class MosoblgazAPI:
     async def fetch_x_system_auth_token(self):
         try:
             async with self._session.get(
-                self.BASE_URL + "/lkk3/asset-manifest.json", allow_redirects=False
+                self.BASE_URL + "/lkk3/asset-manifest.json",
+                allow_redirects=False,
             ) as request:
                 if request.status != 200:
-                    raise AuthenticationFailedException("Asset manifest could not be fetched")
+                    raise AuthenticationFailedException(
+                        "Asset manifest could not be fetched"
+                    )
 
                 manifest_contents = await request.json()
 
                 try:
                     main_js_location = manifest_contents["files"]["main.js"]
                 except KeyError:
-                    raise AuthenticationFailedException("Asset manifest does not contain main.js")
+                    raise AuthenticationFailedException(
+                        "Asset manifest does not contain main.js"
+                    )
 
             async with self._session.get(
                 self.BASE_URL + main_js_location, allow_redirects=False
             ) as request:
                 if request.status != 200:
-                    raise AuthenticationFailedException("Main JS code could not be fetched")
+                    raise AuthenticationFailedException(
+                        "Main JS code could not be fetched"
+                    )
                 js_code = await request.text()
                 results = re.search(
-                    r'[\'"]X-SYSTEM-AUTH-TOKEN[\'"]\s*:\s*[\'"]([^\'"]+)[\'"]', js_code
+                    r'[\'"]X-SYSTEM-AUTH-TOKEN[\'"]\s*:\s*[\'"]([^\'"]+)[\'"]',
+                    js_code,
                 )
 
                 if results is None:
-                    raise AuthenticationFailedException("No X-SYSTEM-AUTH token found")
+                    raise AuthenticationFailedException(
+                        "No X-SYSTEM-AUTH token found"
+                    )
 
         except aiohttp.ClientError as e:
             error_msg = f"Error fetching X-SYSTEM-AUTH token: {e}"
@@ -347,15 +380,23 @@ class MosoblgazAPI:
                         response_text = await response.text()
                         _LOGGER.debug("Response: %s" % response_text)
 
-                    raise AuthenticationFailedException("Error status (%d)" % response.status)
+                    raise AuthenticationFailedException(
+                        "Error status (%d)" % response.status
+                    )
 
-                _LOGGER.debug("Authentication on account %s successful" % self.__username)
+                _LOGGER.debug(
+                    "Authentication on account %s successful" % self.__username
+                )
 
-            async with self._session.post(self.BASE_URL + "/lkk3/cabinet") as response:
+            async with self._session.post(
+                self.BASE_URL + "/lkk3/cabinet"
+            ) as response:
                 graphql_token = response.headers.get("token")
 
                 if not graphql_token:
-                    raise AuthenticationFailedException("Failed to grab GraphQL token")
+                    raise AuthenticationFailedException(
+                        "Failed to grab GraphQL token"
+                    )
 
                 _LOGGER.debug("GraphQL token: %s" % graphql_token)
 
@@ -363,9 +404,13 @@ class MosoblgazAPI:
 
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout executing authentication request")
-            raise AuthenticationFailedException("Timeout executing authentication request")
+            raise AuthenticationFailedException(
+                "Timeout executing authentication request"
+            )
 
-    async def perform_single_query(self, query: str, variables: Optional[Dict[str, Any]] = None):
+    async def perform_single_query(
+        self, query: str, variables: Optional[Dict[str, Any]] = None
+    ):
         return (await self.perform_queries([(query, variables)]))[0]
 
     async def perform_queries(
@@ -413,7 +458,9 @@ class MosoblgazAPI:
 
                 except json.decoder.JSONDecodeError:
                     if _LOGGER.level == logging.DEBUG:
-                        _LOGGER.debug("Response text: %s", await response.text())
+                        _LOGGER.debug(
+                            "Response text: %s", await response.text()
+                        )
 
                     raise QueryFailedException("decoding error")
         except asyncio.TimeoutError:
@@ -472,21 +519,29 @@ class MosoblgazAPI:
         statuses_query = Queries.query("getInternalSystemStatuses")
         contracts_query = Queries.query("accountsList")
 
-        response_list = await self.perform_queries([statuses_query, contracts_query])
+        response_list = await self.perform_queries(
+            [statuses_query, contracts_query]
+        )
         status_response, contracts_response = response_list
 
-        self.check_statuses_response(status_response, raise_for_statuses=raise_for_statuses)
+        self.check_statuses_response(
+            status_response, raise_for_statuses=raise_for_statuses
+        )
 
         contract_ids = set()
         for contract in contracts_response["me"]["contracts"]:
-            device_ids = {device["ID"] for device in contract["contractData"]["Devices"]}
+            device_ids = {
+                device["ID"] for device in contract["contractData"]["Devices"]
+            }
             contract_id = contract["number"]
             contract_ids.add(contract_id)
 
             if contract_id in self._contracts:
                 self._contracts[contract_id].update_device_ids(device_ids)
             else:
-                self._contracts[contract_id] = Contract(self, contract_id, device_ids)
+                self._contracts[contract_id] = Contract(
+                    self, contract_id, device_ids
+                )
 
         for contract_id in self._contracts.keys() - contract_ids:
             del self._contracts[contract_id]
@@ -524,7 +579,10 @@ class MosoblgazAPI:
         elif isinstance(date_, datetime):
             date_ = date_.date()
 
-        push_url = self.BASE_URL + f"/api/contracts/{contract_id}/meters/{meter_id}/values"
+        push_url = (
+            self.BASE_URL
+            + f"/api/contracts/{contract_id}/meters/{meter_id}/values"
+        )
         async with self._session.post(
             push_url,
             json={
@@ -549,14 +607,21 @@ class MosoblgazAPI:
 
 
 class Contract:
-    def __init__(self, api: MosoblgazAPI, contract_id: str, device_ids: Optional[Set[str]] = None):
+    def __init__(
+        self,
+        api: MosoblgazAPI,
+        contract_id: str,
+        device_ids: Optional[Set[str]] = None,
+    ):
         self.api = api
 
         self._contract_id = contract_id
         self._devices: Dict[str, Optional[Device]] = (
             {} if device_ids is None else dict.fromkeys(device_ids, None)
         )
-        self._invoices: Optional[Dict[str, Dict[Tuple[int, int], Invoice]]] = None
+        self._invoices: Optional[
+            Dict[str, Dict[Tuple[int, int], Invoice]]
+        ] = None
 
         self._data = None
 
@@ -604,7 +669,9 @@ class Contract:
             self._invoices = {}
 
         for invoice_group in INVOICE_GROUPS:
-            invoice_data = self._data["calculationsAndPayments"].get(invoice_group)
+            invoice_data = self._data["calculationsAndPayments"].get(
+                invoice_group
+            )
             invoices = self._invoices.setdefault(invoice_group, {})
 
             if invoice_data:
@@ -618,7 +685,9 @@ class Contract:
                     if period in invoices:
                         invoices[period].data = invoice
                     else:
-                        invoices[period] = Invoice(self, invoice_group, invoice, period)
+                        invoices[period] = Invoice(
+                            self, invoice_group, invoice, period
+                        )
 
                 for invoice_key in invoices.keys() - invoice_periods:
                     del invoices[invoice_key]
@@ -680,7 +749,9 @@ class Contract:
         return self._property_data["alias"] or None
 
     @property
-    def all_invoices_by_groups(self) -> Dict[str, Dict[Tuple[int, int], "Invoice"]]:
+    def all_invoices_by_groups(
+        self,
+    ) -> Dict[str, Dict[Tuple[int, int], "Invoice"]]:
         if self._invoices is None:
             raise ContractUpdateRequiredException(self)
 
@@ -689,7 +760,9 @@ class Contract:
     @property
     def last_invoices_by_groups(self) -> Dict[str, "Invoice"]:
         all_invoices = self.all_invoices_by_groups
-        group_count = sum([bool(group_invoices) for group_invoices in all_invoices.values()])
+        group_count = sum(
+            [bool(group_invoices) for group_invoices in all_invoices.values()]
+        )
         last_invoices = dict()
 
         while len(last_invoices) != group_count:
@@ -715,7 +788,14 @@ class Contract:
 
     @property
     def balance(self):
-        return round(float(self._property_data.get("liveBalance", {}).get("liveBalance", 0.0)), 2)
+        return round(
+            float(
+                self._property_data.get("liveBalance", {}).get(
+                    "liveBalance", 0.0
+                )
+            ),
+            2,
+        )
 
     @property
     def devices_data(self) -> List[Dict[str, Any]]:
@@ -723,7 +803,12 @@ class Contract:
 
     @property
     def meters_data(self):
-        return list(filter(lambda x: x["ClassCode"] in ClassCodes.METERS, self.devices_data))
+        return list(
+            filter(
+                lambda x: x["ClassCode"] in ClassCodes.METERS,
+                self.devices_data,
+            )
+        )
 
     @property
     def history_data(self):
@@ -735,7 +820,9 @@ class Contract:
         value: Union[int, float],
         date_: Optional[Union[datetime, date]] = None,
     ):
-        return await self.api.push_indication(self.contract_id, meter_id, value, date_)
+        return await self.api.push_indication(
+            self.contract_id, meter_id, value, date_
+        )
 
 
 class Device:
@@ -773,7 +860,9 @@ class Device:
     def device_class(self) -> Optional[str]:
         try:
             return list(ClassCodes.__dict__.keys())[
-                list(ClassCodes.__dict__.values()).index(self.device_class_code)
+                list(ClassCodes.__dict__.values()).index(
+                    self.device_class_code
+                )
             ].lower()
         except IndexError:
             return None
@@ -806,7 +895,9 @@ class Meter(Device):
         return self._history
 
     @history.setter
-    def history(self, value: List[Dict[str, Union[str, Dict[str, int]]]]) -> None:
+    def history(
+        self, value: List[Dict[str, Union[str, Dict[str, int]]]]
+    ) -> None:
         if self._history is None:
             self._history = {}
 
@@ -840,7 +931,9 @@ class Meter(Device):
             history_entry = self.last_history_entry
             if history_entry and int(value) < int(history_entry.value):
                 raise ValueError("new value is less than previous value")
-        return await self.contract.push_indication(self.device_id, value, date_)
+        return await self.contract.push_indication(
+            self.device_id, value, date_
+        )
 
 
 class HistoryEntry:
