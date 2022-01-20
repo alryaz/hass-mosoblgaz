@@ -5,7 +5,12 @@ import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
-from homeassistant.const import CONF_PASSWORD, CONF_SCAN_INTERVAL, CONF_TIMEOUT, CONF_USERNAME
+from homeassistant.const import (
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_TIMEOUT,
+    CONF_USERNAME,
+)
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
@@ -19,7 +24,11 @@ from .const import (
     DEFAULT_TIMEOUT,
     DOMAIN,
 )
-from .mosoblgaz import AuthenticationFailedException, MosoblgazException, PartialOfflineException
+from .api import (
+    AuthenticationFailedException,
+    MosoblgazException,
+    PartialOfflineException,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,7 +62,9 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return False
 
     # Initial step for user interaction
-    async def async_step_user(self, user_input: Optional[Dict[str, Any]] = None):
+    async def async_step_user(
+        self, user_input: Optional[Dict[str, Any]] = None
+    ):
         """Handle a flow start."""
         if user_input is None:
             return self.async_show_form(
@@ -71,7 +82,7 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if await self._check_entry_exists(username):
             return self.async_abort("already_exists")
 
-        from .mosoblgaz import MosoblgazAPI
+        from .api import MosoblgazAPI
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -94,8 +105,12 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 step_id="user",
                 data_schema=vol.Schema(
                     {
-                        vol.Required(CONF_USERNAME, default=user_input[CONF_USERNAME]): cv.string,
-                        vol.Required(CONF_PASSWORD, default=user_input[CONF_PASSWORD]): cv.string,
+                        vol.Required(
+                            CONF_USERNAME, default=user_input[CONF_USERNAME]
+                        ): cv.string,
+                        vol.Required(
+                            CONF_PASSWORD, default=user_input[CONF_PASSWORD]
+                        ): cv.string,
                     }
                 ),
                 errors={"base": "invalid_credentials"},
@@ -107,7 +122,9 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         except MosoblgazException:
             return self.async_abort("api_error")
 
-        return self.async_create_entry(title="User: " + username, data=user_input)
+        return self.async_create_entry(
+            title="User: " + username, data=user_input
+        )
 
     async def async_step_import(self, user_input=None):
         """
@@ -123,7 +140,9 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         if await self._check_entry_exists(username):
             return self.async_abort("already_exists")
 
-        return self.async_create_entry(title="User: " + username, data={CONF_USERNAME: username})
+        return self.async_create_entry(
+            title="User: " + username, data={CONF_USERNAME: username}
+        )
 
     @staticmethod
     @callback
@@ -140,7 +159,9 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
         self.config_entry = config_entry
         username = config_entry.data[CONF_USERNAME]
         options_source = (
-            config_entry.data if config_entry.source == SOURCE_IMPORT else config_entry.options
+            config_entry.data
+            if config_entry.source == SOURCE_IMPORT
+            else config_entry.options
         )
         if options_source.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
             print_username = privacy_formatter(username)
@@ -164,7 +185,10 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
         :param user_input: User input mapping
         :return: Flow response
         """
-        _LOGGER.debug("%s Showing options form for imported configuration", self.log_prefix)
+        _LOGGER.debug(
+            "%s Showing options form for imported configuration",
+            self.log_prefix,
+        )
         return self.async_show_form(step_id="import")
 
     async def async_step_user(self, user_input=None):
@@ -178,25 +202,39 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
             _LOGGER.debug("%s Saving: %s", self.log_prefix, user_input)
             return self.async_create_entry(title="", data=user_input)
 
-        _LOGGER.debug("%s Showing options form for GUI configuration", self.log_prefix)
+        _LOGGER.debug(
+            "%s Showing options form for GUI configuration", self.log_prefix
+        )
 
         options = self.config_entry.options or {}
 
-        default_invert_invoices = options.get(CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES)
+        default_invert_invoices = options.get(
+            CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES
+        )
         default_timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        default_scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        default_privacy_logging = options.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
+        default_scan_interval = options.get(
+            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
+        )
+        default_privacy_logging = options.get(
+            CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING
+        )
 
         return self.async_show_form(
             step_id="user",
             data_schema=vol.Schema(
                 {
-                    vol.Optional(CONF_INVERT_INVOICES, default=default_invert_invoices): cv.boolean,
-                    vol.Optional(CONF_TIMEOUT, default=default_timeout): cv.positive_int,
+                    vol.Optional(
+                        CONF_INVERT_INVOICES, default=default_invert_invoices
+                    ): cv.boolean,
+                    vol.Optional(
+                        CONF_TIMEOUT, default=default_timeout
+                    ): cv.positive_int,
                     vol.Optional(
                         CONF_SCAN_INTERVAL, default=default_scan_interval
                     ): cv.positive_int,
-                    vol.Optional(CONF_PRIVACY_LOGGING, default=default_privacy_logging): cv.boolean,
+                    vol.Optional(
+                        CONF_PRIVACY_LOGGING, default=default_privacy_logging
+                    ): cv.boolean,
                 }
             ),
         )

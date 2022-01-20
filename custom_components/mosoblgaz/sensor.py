@@ -43,7 +43,7 @@ from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 
 from . import get_print_username, is_privacy_logging_enabled, privacy_formatter
 from .const import *
-from .mosoblgaz import (
+from .api import (
     Contract,
     INVOICE_GROUP_GAS,
     INVOICE_GROUP_TECH,
@@ -261,7 +261,7 @@ async def async_account_updater(
         if privacy_logging_enabled:
             print_contract_id = privacy_formatter(print_contract_id)
 
-        contract_log_prefix = log_prefix + f"(contract|{print_contract_id})"
+        contract_log_prefix = log_prefix + f"(contract|{print_contract_id}) "
 
         # Prepare entities holder
         if contract_id in entry_entities:
