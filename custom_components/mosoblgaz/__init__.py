@@ -33,7 +33,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 
 from .const import *
-from .mosoblgaz import (
+from .api import (
     AuthenticationFailedException,
     MOSCOW_TIMEZONE,
     MosoblgazAPI,
@@ -269,7 +269,7 @@ async def async_setup_entry(
     log_prefix = f"(user|{get_print_username(hass, user_cfg)})"
     _LOGGER.debug("%s Setting up config entry", log_prefix)
 
-    from .mosoblgaz import MosoblgazAPI, MosoblgazException, today_blackout
+    from .api import MosoblgazAPI, MosoblgazException, today_blackout
 
     timeout = options_cfg.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
     if isinstance(timeout, timedelta):
