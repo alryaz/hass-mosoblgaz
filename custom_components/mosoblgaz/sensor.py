@@ -10,7 +10,6 @@ from typing import (
     Any,
     Callable,
     Dict,
-    Final,
     Iterable,
     List,
     Mapping,
@@ -30,7 +29,6 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.const import (
-    ATTR_ATTRIBUTION,
     ATTR_ENTITY_ID,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
@@ -55,7 +53,7 @@ from .api import (
     PartialOfflineException,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER: logging.Logger = logging.getLogger(__name__)
 
 INDICATIONS_MAPPING_SCHEMA = vol.Schema(
     {
@@ -69,9 +67,6 @@ INDICATIONS_SEQUENCE_SCHEMA = vol.All(
         map(lambda y: ("t" + str(y[0]), y[1]), enumerate(x, start=1))
     ),
 )
-
-ATTR_IGNORE_INDICATIONS: Final = "ignore_indications"
-ATTR_INCREMENTAL: Final = "incremental"
 
 SERVICE_PUSH_INDICATIONS: Final = "push_indications"
 SERVICE_PUSH_INDICATIONS_SCHEMA: Final = vol.Schema(
@@ -155,7 +150,12 @@ async def async_account_updater(
 
     # Privacy logging configuration
     privacy_logging_enabled = is_privacy_logging_enabled(hass, config_entry)
-    log_prefix = f"(user|{get_print_username(hass, config_entry, privacy_logging=privacy_logging_enabled)}) "
+    print_username = get_print_username(
+        hass,
+        config_entry,
+        privacy_logging=privacy_logging_enabled,
+    )
+    log_prefix = f"(user|{print_username}) "
 
     _LOGGER.debug(log_prefix + f"Running updater at {datetime.now()}")
     api: "MosoblgazAPI" = hass.data.get(DATA_API_OBJECTS, {}).get(entry_id)
@@ -537,7 +537,8 @@ async def async_setup_platform(
 
 
 class MOGEntity(Entity):
-    _attr_should_poll = False
+    _attr_should_poll: bool = False
+    _attr_attribution: str = ATTRIBUTION
 
     SENSOR_TYPE = NotImplemented
     UNIQUE_ID_FORMAT = "{sensor_type}_{contract_code}"
@@ -571,7 +572,6 @@ class MOGEntity(Entity):
     def base_attributes(self):
         return {
             ATTR_CONTRACT_CODE: self.contract.contract_id,
-            ATTR_ATTRIBUTION: ATTRIBUTION,
         }
 
     @property
@@ -619,9 +619,9 @@ class MOGEntity(Entity):
 class MOGContractSensor(MOGEntity):
     """The class for this sensor"""
 
-    _attr_icon = "mdi:file-document-edit"
-    _attr_unit_of_measurement = RUB_CURRENCY
-    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_icon: str = "mdi:file-document-edit"
+    _attr_device_class: SensorDeviceClass = SensorDeviceClass.MONETARY
+    _attr_unit_of_measurement: str = RUB_CURRENCY
 
     def __init__(
         self,
@@ -660,20 +660,13 @@ class MOGContractSensor(MOGEntity):
         }
 
 
-ATTR_COMMENT: Final = "comment"
-ATTR_SUCCESS: Final = "success"
-ATTR_CALL_PARAMS: Final = "call_params"
-ATTR_INDICATION: Final = "indication"
-
-FEATURE_PUSH_INDICATIONS: int = 1
-
-
 class MOGMeterSensor(MOGEntity):
     """The class for this sensor"""
 
-    _attr_icon = "mdi:counter"
-    _attr_unit_of_measurement = VOLUME_CUBIC_METERS
-    _attr_device_class = SensorDeviceClass.GAS
+    _attr_ico: str = "mdi:counter"
+    _attr_unit_of_measurement: str = VOLUME_CUBIC_METERS
+    _attr_device_class: SensorDeviceClass = SensorDeviceClass.GAS
+    _attr_supported_features: int = FEATURE_PUSH_INDICATIONS
 
     SENSOR_TYPE = "meter"
     UNIQUE_ID_FORMAT = "{sensor_type}_{meter_code}"
@@ -695,19 +688,11 @@ class MOGMeterSensor(MOGEntity):
 
     async def async_added_to_hass(self) -> None:
         self.platform.async_register_entity_service(
-            "push_indications",
+            SERVICE_PUSH_INDICATIONS,
             SERVICE_PUSH_INDICATIONS_SCHEMA,
-            "async_service_push_indications",
+            "async_service_" + SERVICE_PUSH_INDICATIONS,
             (FEATURE_PUSH_INDICATIONS,),
         )
-
-    @property
-    def supported_features(self) -> int:
-        return FEATURE_PUSH_INDICATIONS
-
-    @property
-    def device_class(self) -> str:
-        return DOMAIN + "_meter"
 
     async def async_update(self):
         """The update method"""
@@ -891,9 +876,9 @@ class MOGMeterSensor(MOGEntity):
 
 
 class MOGInvoiceSensor(MOGEntity):
-    _attr_icon = "mdi:receipt"
-    _attr_unit_of_measurement = RUB_CURRENCY
-    _attr_device_class = SensorDeviceClass.MONETARY
+    _attr_icon: str = "mdi:receipt"
+    _attr_unit_of_measurement: str = RUB_CURRENCY
+    _attr_device_class: SensorDeviceClass = SensorDeviceClass.MONETARY
 
     SENSOR_TYPE = "invoice"
     UNIQUE_ID_FORMAT = "{sensor_type}_{contract_code}_{group_code}"

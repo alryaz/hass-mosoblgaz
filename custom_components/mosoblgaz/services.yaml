@@ -2,7 +2,8 @@ push_indications:
   description: 'Передать показания в личный кабинет'
   target:
     entity:
-      device_class: mosoblgaz_meter
+      integration: mosoblgaz
+      device_class: gas
   fields:
     indications:
       description: 'Показание'
