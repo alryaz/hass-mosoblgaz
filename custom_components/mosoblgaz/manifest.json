@@ -1,7 +1,7 @@
 {
     "domain": "mosoblgaz",
     "name": "Мособлгаз (Mosoblgaz)",
-    "version": "v1.0.0",
+    "version": "v1.0.1",
     "documentation": "https://github.com/alryaz/hass-mosoblgaz",
     "dependencies": [],
     "issue_tracker": "https://github.com/alryaz/hass-mosoblgaz/issues",
