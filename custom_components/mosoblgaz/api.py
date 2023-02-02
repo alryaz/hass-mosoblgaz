@@ -959,7 +959,7 @@ class HistoryEntry:
 
     @property
     def cost(self) -> float:
-        return float(self._data.get("Cost", 0.0))
+        return float(self._data.get("Cost") or 0.0)
 
     @property
     def delta(self) -> int:
@@ -1025,12 +1025,12 @@ class Invoice:
     @property
     def balance(self) -> float:
         """Balance at the moment of invoice issue"""
-        return round(float(self._data.get("balance", 0.0)), 2)
+        return round(float(self._data.get("balance") or 0.0), 2)
 
     @property
     def paid(self) -> Optional[float]:
         """Paid amount (if available)"""
-        return round(float(self._data.get("paid", 0.0)), 2)
+        return round(float(self._data.get("paid") or 0.0), 2)
 
     @property
     def payments(self) -> List["Payment"]:
@@ -1050,7 +1050,7 @@ class Invoice:
     @property
     def total(self) -> Optional[float]:
         """Invoice total"""
-        return round(float(self._data.get("invoice", 0.0)), 2)
+        return round(float(self._data.get("invoice") or 0.0), 2)
 
 
 class Payment:
