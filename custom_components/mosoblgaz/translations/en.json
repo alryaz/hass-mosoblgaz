@@ -1,5 +1,12 @@
 {
     "config": {
+        "error": {
+            "invalid_credentials": "Invalid username or password.",
+            "nothing_enabled": "None of the contracts have been selected to be added to the system.",
+            "contracts_missing": "The user has no contracts to add.",
+            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later.",
+            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log."
+        },
         "step": {
             "user": {
                 "data": {
@@ -19,28 +26,21 @@
                 "title": "Contract no. {{ code }}"
             }
         },
-        "errors": {
-            "invalid_credentials": "Invalid username or password.",
-            "nothing_enabled": "None of the contracts have been selected to be added to the system.",
-            "contracts_missing": "The user has no contracts to add.",
-            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later.",
-            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log."
-        },
         "title": "Mosoblgaz"
     },
     "options": {
-         "step": {
-             "user": {
-                 "data": {
-                     "invert_invoices": "Show positive invoice surplus",
-                     "timeout": "Timeout of requests to the server (in seconds)",
-                     "scan_interval": "Update interval (in seconds)",
-                     "privacy_logging": "Hide personal information in logs"
-                 }
-             },
-             "import": {
-                 "description": "*Settings via the interface are not available when configuring via YAML.*\n\nPlease edit the configuration file to change the parameters."
-             }
-         }
-     }
+        "step": {
+            "user": {
+                "data": {
+                    "invert_invoices": "Show positive invoice surplus",
+                    "timeout": "Timeout of requests to the server (in seconds)",
+                    "scan_interval": "Update interval (in seconds)",
+                    "privacy_logging": "Hide personal information in logs"
+                }
+            },
+            "import": {
+                "description": "*Settings via the interface are not available when configuring via YAML.*\n\nPlease edit the configuration file to change the parameters."
+            }
+        }
+    }
 }
