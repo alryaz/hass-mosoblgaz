@@ -416,7 +416,7 @@ class MosoblgazAPI:
     async def perform_queries(
         self, queries: List[Union[str, Tuple[str, Optional[Dict[str, Any]]]]]
     ) -> List[Dict[str, Any]]:
-
+        """Perform multiple queries at once."""
         if not self.is_logged_in:
             raise AuthenticationFailedException(
                 "Authentication required prior to making batch requests"
@@ -430,9 +430,18 @@ class MosoblgazAPI:
             else:
                 query, variables = query_variables
 
+            operation_name = None
+            if query.startswith("query "):
+                try:
+                    name_start = query.index(" ") + 1
+                    name_end = query.index(" ", name_start)
+                    operation_name = query[name_start:name_end] or None
+                except ValueError:
+                    pass
+
             payload.append(
                 {
-                    "operationName": query,
+                    "operationName": operation_name,
                     "query": query,
                     "variables": {} if variables is None else variables,
                 }
@@ -447,22 +456,23 @@ class MosoblgazAPI:
                 json=payload,
                 headers={"token": self.__graphql_token},
             ) as response:
-
                 try:
-                    json_response = await response.json()
+                    listed_data = list(
+                        map(lambda x: x["data"], await response.json())
+                    )
+                except (
+                    json.decoder.JSONDecodeError,
+                    aiohttp.ContentTypeError,
+                    ValueError,
+                    AttributeError,
+                    LookupError,
+                ) as exc:
+                    _LOGGER.debug(f"Response text: {await response.text()}")
+                    raise QueryFailedException("decoding error") from exc
+                else:
+                    _LOGGER.debug(f"Received data: {listed_data}")
+                    return listed_data
 
-                    if _LOGGER.level == logging.DEBUG:
-                        _LOGGER.debug("Received data: %s", json_response)
-
-                    return list(map(lambda x: x["data"], json_response))
-
-                except json.decoder.JSONDecodeError:
-                    if _LOGGER.level == logging.DEBUG:
-                        _LOGGER.debug(
-                            "Response text: %s", await response.text()
-                        )
-
-                    raise QueryFailedException("decoding error")
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout executing query")
             raise QueryFailedException("Timeout executing query")

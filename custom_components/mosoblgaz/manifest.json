@@ -1,17 +1,16 @@
 {
     "domain": "mosoblgaz",
     "name": "Мособлгаз (Mosoblgaz)",
-    "version": "v1.0.1",
-    "documentation": "https://github.com/alryaz/hass-mosoblgaz",
-    "dependencies": [],
-    "issue_tracker": "https://github.com/alryaz/hass-mosoblgaz/issues",
     "codeowners": [
         "@alryaz"
     ],
     "config_flow": true,
+    "dependencies": [],
+    "documentation": "https://github.com/alryaz/hass-mosoblgaz",
+    "iot_class": "cloud_polling",
+    "issue_tracker": "https://github.com/alryaz/hass-mosoblgaz/issues",
     "requirements": [
-        "python-dateutil==2.8.1"
+        "python-dateutil==2.8.2"
     ],
-    "iot_class": "cloud_polling"
+    "version": "v1.0.1"
 }
-
