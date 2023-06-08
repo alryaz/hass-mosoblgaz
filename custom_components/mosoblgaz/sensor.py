@@ -430,7 +430,7 @@ async def async_account_updater(
     # Perform scheduled tasks before other procedures
     if tasks:
         _LOGGER.debug(log_prefix + f"Performing {len(tasks)} tasks")
-        await asyncio.wait(tasks)
+        await asyncio.wait(list(map(hass.loop.create_task, tasks)))
 
     if new_entities:
         _LOGGER.debug(log_prefix + f"Adding {len(new_entities)} new entities")
