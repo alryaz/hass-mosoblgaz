@@ -128,3 +128,6 @@ dmypy.json
 
 # Local testing
 local_test.py
+
+# Local Home Assistant installation
+/hass

@@ -370,7 +370,7 @@ async def async_unload_entry(
     if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
         # Remove API objects
         _LOGGER.debug("%s Unloading updater", log_prefix)
-        updater_cancel = hass.data[DATA_UPDATERS].pop(entry_id)
+        updater_cancel, force_update = hass.data[DATA_UPDATERS].pop(entry_id)
         if updater_cancel:
             updater_cancel()
         if not hass.data[DATA_UPDATERS]:
