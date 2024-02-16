@@ -388,8 +388,8 @@ class MosoblgazAPI:
                     "Authentication on account %s successful" % self.__username
                 )
 
-            async with self._session.post(
-                self.BASE_URL + "/lkk3/cabinet"
+            async with self._session.head(
+                self.BASE_URL + "/lkk3/"
             ) as response:
                 graphql_token = response.headers.get("token")
 
