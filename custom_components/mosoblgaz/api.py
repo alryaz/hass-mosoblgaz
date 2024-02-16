@@ -62,15 +62,11 @@ class Queries:
     def compile_sub_query(
         cls,
         queries: list,
-        section: Optional[str] = None,
+        section: str | None = None,
         indent_level: int = 0,
         indent_str: str = " ",
     ) -> str:
-        buffer = (
-            "{"
-            if section is None
-            else indent_str * indent_level + section + " {"
-        )
+        buffer = "{" if section is None else indent_str * indent_level + section + " {"
 
         indent_level += 1
         for sub_query in queries:
@@ -79,9 +75,7 @@ class Queries:
                     section_name = (
                         sub_query[0][0]
                         + "("
-                        + ", ".join(
-                            ["%s: $%s" % v for v in sub_query[0][1].items()]
-                        )
+                        + ", ".join(["%s: $%s" % v for v in sub_query[0][1].items()])
                         + ")"
                     )
                 else:
@@ -119,9 +113,7 @@ class Queries:
             if isinstance(template_format, tuple):
                 compiled_query = (
                     "("
-                    + ", ".join(
-                        ["$%s: %s" % v for v in template_format[0].items()]
-                    )
+                    + ", ".join(["$%s: %s" % v for v in template_format[0].items()])
                     + ")"
                     + cls.compile_sub_query(template_format[1])
                 )
@@ -254,20 +246,24 @@ class MosoblgazAPI:
     BASE_URL = "https://lkk.mosoblgaz.ru"
     AUTH_URL = BASE_URL + "/auth/login"
     BATCH_URL = BASE_URL + "/graphql/batch"
+    CAPTCHA_URL = "https://captcha.mosoblgaz.ru"
 
     def __init__(
         self,
         username: str,
         password: str,
         session: Optional[aiohttp.ClientSession] = None,
-        x_system_auth_token: Optional[str] = None,
+        x_system_auth_token: str | None = None,
+        site_key: str | None = None,
     ):
         self.__username = username
         self.__password = password
         self.__graphql_token = None
 
+        self._site_key = site_key
+
         self._session = session or aiohttp.ClientSession()
-        self._x_system_auth_token: Optional[str] = x_system_auth_token
+        self._x_system_auth_token: str | None = x_system_auth_token
 
         self._contracts: Dict[str, Contract] = {}
 
@@ -281,6 +277,14 @@ class MosoblgazAPI:
         try:
             async with self._session.get(fetch_url) as request:
                 html = await request.text()
+
+                if m := re.search(
+                    re.escape(self.CAPTCHA_URL + r"/api.js?site-key=") + "([a-f0-9]+)",
+                    html,
+                ):
+                    # Update site key
+                    self._site_key = m.group(1)
+
                 results = re.search(r'csrf_token"\s+value="([^"]+)', html)
 
                 if results is None:
@@ -336,9 +340,7 @@ class MosoblgazAPI:
                 )
 
                 if results is None:
-                    raise AuthenticationFailedException(
-                        "No X-SYSTEM-AUTH token found"
-                    )
+                    raise AuthenticationFailedException("No X-SYSTEM-AUTH token found")
 
         except aiohttp.ClientError as e:
             error_msg = f"Error fetching X-SYSTEM-AUTH token: {e}"
@@ -356,7 +358,29 @@ class MosoblgazAPI:
 
         return x_system_auth_token
 
-    async def authenticate(self, captcha_result: Optional[str] = None):
+    async def fetch_temporary_token(self, action: str) -> str | None:
+        if not self._site_key:
+            raise AuthenticationFailedException("no site key set")
+
+        _LOGGER.debug(f"Fetching temporary token for action: {action}")
+
+        # Perform POST request for captchas
+        async with self._session.post(
+            self.CAPTCHA_URL + "/api/captchas",
+            json={"action": action},
+            headers={"Site-Key": self._site_key},
+        ) as response:
+            data = await response.json()
+        if data.get("showCaptcha"):
+            # @TODO: support captcha retrieval
+            raise AuthenticationFailedException("captcha required (not supported)")
+        if temporary_token := data.get("temporaryToken"):
+            _LOGGER.debug(f"Fetched temporary token: {temporary_token}")
+        else:
+            _LOGGER.debug(f"Temporary token not provided in: {data}")
+        return temporary_token
+
+    async def authenticate(self, captcha_result: str | None = None):
         csrf_token, x_system_auth_token = await asyncio.gather(
             self.fetch_csrf_token(),
             self.fetch_x_system_auth_token(),
@@ -365,38 +389,42 @@ class MosoblgazAPI:
         self._x_system_auth_token = x_system_auth_token
 
         try:
+            auth_request_data = {
+                "mog_login[username]": self.__username,
+                "mog_login[password]": self.__password,
+                "mog_login[captcha]": captcha_result or "",
+                "_csrf_token": csrf_token,
+                "_remember_me": "on",
+            }
+
+            if temporary_token := await self.fetch_temporary_token("login"):
+                auth_request_data["mog-captcha-response"] = temporary_token
+
             async with self._session.post(
-                self.AUTH_URL,
-                data={
-                    "mog_login[username]": self.__username,
-                    "mog_login[password]": self.__password,
-                    "mog_login[captcha]": captcha_result or "",
-                    "_csrf_token": csrf_token,
-                    "_remember_me": "on",
-                },
+                self.AUTH_URL, data=auth_request_data
             ) as response:
                 if response.status not in [200, 301, 302]:
                     if _LOGGER.level == logging.DEBUG:
-                        response_text = await response.text()
-                        _LOGGER.debug("Response: %s" % response_text)
+                        _LOGGER.debug(f"Response: {await response.text()}")
 
                     raise AuthenticationFailedException(
-                        "Error status (%d)" % response.status
+                        f"Error status ({response.status})"
                     )
 
-                _LOGGER.debug(
-                    "Authentication on account %s successful" % self.__username
-                )
+                _LOGGER.debug(f"Authentication on account {self.__username} successful")
 
-            async with self._session.head(
-                self.BASE_URL + "/lkk3/"
-            ) as response:
-                graphql_token = response.headers.get("token")
+            cookies = self._session.cookie_jar.filter_cookies(self.BASE_URL)
+            for key, cookie in cookies.items():
+                _LOGGER.debug('CooKey: "%s", Value: "%s"' % (cookie.key, cookie.value))
+
+            async with self._session.head(self.BASE_URL + "/lkk3/") as response:
+                graphql_token = response.headers.get("Token")
 
                 if not graphql_token:
-                    raise AuthenticationFailedException(
-                        "Failed to grab GraphQL token"
+                    _LOGGER.debug(
+                        f"No graphql token found in: headers={response.headers}, body={await response.text()}"
                     )
+                    raise AuthenticationFailedException("Failed to grab GraphQL token")
 
                 _LOGGER.debug("GraphQL token: %s" % graphql_token)
 
@@ -457,9 +485,7 @@ class MosoblgazAPI:
                 headers={"token": self.__graphql_token},
             ) as response:
                 try:
-                    listed_data = list(
-                        map(lambda x: x["data"], await response.json())
-                    )
+                    listed_data = list(map(lambda x: x["data"], await response.json()))
                 except (
                     json.decoder.JSONDecodeError,
                     aiohttp.ContentTypeError,
@@ -529,9 +555,7 @@ class MosoblgazAPI:
         statuses_query = Queries.query("getInternalSystemStatuses")
         contracts_query = Queries.query("accountsList")
 
-        response_list = await self.perform_queries(
-            [statuses_query, contracts_query]
-        )
+        response_list = await self.perform_queries([statuses_query, contracts_query])
         status_response, contracts_response = response_list
 
         self.check_statuses_response(
@@ -549,9 +573,7 @@ class MosoblgazAPI:
             if contract_id in self._contracts:
                 self._contracts[contract_id].update_device_ids(device_ids)
             else:
-                self._contracts[contract_id] = Contract(
-                    self, contract_id, device_ids
-                )
+                self._contracts[contract_id] = Contract(self, contract_id, device_ids)
 
         for contract_id in self._contracts.keys() - contract_ids:
             del self._contracts[contract_id]
@@ -590,8 +612,7 @@ class MosoblgazAPI:
             date_ = date_.date()
 
         push_url = (
-            self.BASE_URL
-            + f"/api/contracts/{contract_id}/meters/{meter_id}/values"
+            self.BASE_URL + f"/api/contracts/{contract_id}/meters/{meter_id}/values"
         )
         async with self._session.post(
             push_url,
@@ -629,9 +650,7 @@ class Contract:
         self._devices: Dict[str, Optional[Device]] = (
             {} if device_ids is None else dict.fromkeys(device_ids, None)
         )
-        self._invoices: Optional[
-            Dict[str, Dict[Tuple[int, int], Invoice]]
-        ] = None
+        self._invoices: Optional[Dict[str, Dict[Tuple[int, int], Invoice]]] = None
 
         self._data = None
 
@@ -679,9 +698,7 @@ class Contract:
             self._invoices = {}
 
         for invoice_group in INVOICE_GROUPS:
-            invoice_data = self._data["calculationsAndPayments"].get(
-                invoice_group
-            )
+            invoice_data = self._data["calculationsAndPayments"].get(invoice_group)
             invoices = self._invoices.setdefault(invoice_group, {})
 
             if invoice_data:
@@ -695,9 +712,7 @@ class Contract:
                     if period in invoices:
                         invoices[period].data = invoice
                     else:
-                        invoices[period] = Invoice(
-                            self, invoice_group, invoice, period
-                        )
+                        invoices[period] = Invoice(self, invoice_group, invoice, period)
 
                 for invoice_key in invoices.keys() - invoice_periods:
                     del invoices[invoice_key]
@@ -755,7 +770,7 @@ class Contract:
         return self._property_data["address"]
 
     @property
-    def alias(self) -> Optional[str]:
+    def alias(self) -> str | None:
         return self._property_data["alias"] or None
 
     @property
@@ -799,11 +814,7 @@ class Contract:
     @property
     def balance(self):
         return round(
-            float(
-                self._property_data.get("liveBalance", {}).get(
-                    "liveBalance", 0.0
-                )
-            ),
+            float(self._property_data.get("liveBalance", {}).get("liveBalance", 0.0)),
             2,
         )
 
@@ -830,9 +841,7 @@ class Contract:
         value: Union[int, float],
         date_: Optional[Union[datetime, date]] = None,
     ):
-        return await self.api.push_indication(
-            self.contract_id, meter_id, value, date_
-        )
+        return await self.api.push_indication(self.contract_id, meter_id, value, date_)
 
 
 class Device:
@@ -867,12 +876,10 @@ class Device:
         return int(self.data.get("ClassCode", -1))
 
     @property
-    def device_class(self) -> Optional[str]:
+    def device_class(self) -> str | None:
         try:
             return list(ClassCodes.__dict__.keys())[
-                list(ClassCodes.__dict__.values()).index(
-                    self.device_class_code
-                )
+                list(ClassCodes.__dict__.values()).index(self.device_class_code)
             ].lower()
         except IndexError:
             return None
@@ -893,7 +900,7 @@ class Meter(Device):
         self._last_history_period = None
 
     @property
-    def serial(self) -> Optional[str]:
+    def serial(self) -> str | None:
         return self.data.get("ManfNo")
 
     @property
@@ -905,9 +912,7 @@ class Meter(Device):
         return self._history
 
     @history.setter
-    def history(
-        self, value: List[Dict[str, Union[str, Dict[str, int]]]]
-    ) -> None:
+    def history(self, value: List[Dict[str, Union[str, Dict[str, int]]]]) -> None:
         if self._history is None:
             self._history = {}
 
@@ -941,9 +946,7 @@ class Meter(Device):
             history_entry = self.last_history_entry
             if history_entry and int(value) < int(history_entry.value):
                 raise ValueError("new value is less than previous value")
-        return await self.contract.push_indication(
-            self.device_id, value, date_
-        )
+        return await self.contract.push_indication(self.device_id, value, date_)
 
 
 class HistoryEntry:
