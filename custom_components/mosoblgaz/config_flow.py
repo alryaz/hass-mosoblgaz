@@ -99,7 +99,8 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 if not contracts:
                     return self.async_abort("contracts_missing")
 
-        except AuthenticationFailedException:
+        except AuthenticationFailedException as exc:
+            _LOGGER.error(f"Error during authentication flow: {exc}", exc_info=exc)
             # @TODO: display captcha
             return self.async_show_form(
                 step_id="user",
