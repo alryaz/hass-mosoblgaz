@@ -508,10 +508,9 @@ async def async_setup_entry(
                 updater_cancel = async_track_time_interval(
                     hass, update_call, config_scan_interval
                 )
-                setattr(updater_cancel, "restart", force_update)
                 hass.data.setdefault(DATA_UPDATERS, {})[
                     config_entry.entry_id
-                ] = updater_cancel
+                ] = (updater_cancel, force_update)
 
         await force_update()
 
@@ -546,12 +545,12 @@ class MOGEntity(Entity):
     def __init__(
         self,
         contract: "Contract",
-        name_format: Optional[str] = None,
+        name_format: str | None = None,
         default_add: bool = True,
     ):
         self.contract = contract
 
-        self._name_format: Optional[str] = name_format
+        self._name_format: str | None = name_format
         self._attr_entity_registry_enabled_default: bool = default_add
 
         self._attr_state: Optional[Union[float, int, str]] = None
@@ -590,7 +589,7 @@ class MOGEntity(Entity):
             return self._name_format
 
     @property
-    def unique_id(self) -> Optional[str]:
+    def unique_id(self) -> str | None:
         try:
             return self.UNIQUE_ID_FORMAT.format(**self.name_placeholders)
         except KeyError:
@@ -605,13 +604,10 @@ class MOGEntity(Entity):
         if not config_entry_id:
             raise Exception("config entry not found")
 
-        updater = self.hass.data[DATA_UPDATERS].get(config_entry_id)
-        if not updater:
+        try:
+            update_cancel, restart_call = self.hass.data[DATA_UPDATERS][config_entry_id]
+        except KeyError:
             raise Exception("updater not found")
-
-        restart_call = getattr(updater, "restart", None)
-        if not restart_call:
-            raise Exception("no restart call found")
 
         return await restart_call()
 
@@ -995,7 +991,7 @@ class MOGInvoiceSensor(MOGEntity):
                 ] = previous_invoice.payments_count
 
     @property
-    def icon(self) -> Optional[str]:
+    def icon(self) -> str | None:
         return self.GROUP_ICONS.get(self.group_code, super().icon)
 
     @property
