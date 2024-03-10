@@ -360,7 +360,7 @@ class MosoblgazAPI:
 
     async def fetch_temporary_token(self, action: str) -> str | None:
         if not self._site_key:
-            raise AuthenticationFailedException("no site key set")
+            _LOGGER.info(f"Attempting to make request without site key")
 
         _LOGGER.debug(f"Fetching temporary token for action: {action}")
 
@@ -368,7 +368,7 @@ class MosoblgazAPI:
         async with self._session.post(
             self.CAPTCHA_URL + "/api/captchas",
             json={"action": action},
-            headers={"Site-Key": self._site_key},
+            headers={"Site-Key": self._site_key} if self._site_key else {},
         ) as response:
             data = await response.json()
         if data.get("showCaptcha"):

@@ -26,7 +26,7 @@ DEFAULT_INVERT_INVOICES: Final = False
 DEFAULT_ADD_INVOICES: Final = True
 DEFAULT_ADD_METERS: Final = True
 DEFAULT_ADD_CONTRACTS: Final = True
-DEFAULT_PRIVACY_LOGGING: Final = False
+DEFAULT_PRIVACY_LOGGING: Final = True
 
 ATTRIBUTION: Final = "Data provided by Mosoblgaz"
 RUB_CURRENCY: Final = "руб."
