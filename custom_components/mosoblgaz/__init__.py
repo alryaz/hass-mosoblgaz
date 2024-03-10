@@ -43,12 +43,12 @@ from .api import (
 _LOGGER = logging.getLogger(__name__)
 
 
-def privacy_formatter(value: Any) -> str:
+def privacy_formatter(value: Any, max_length: int = 3) -> str:
     str_value = str(value)
-    if len(str_value) <= 2:
+    if len(str_value) <= max_length:
         return str_value
 
-    suffix = str_value[-max(2, int(round(0.2 * len(str_value)))) :]
+    suffix = str_value[-max(max_length, int(round(0.2 * len(str_value)))) :]
     return "*" * (len(str_value) - len(suffix)) + suffix
 
 
