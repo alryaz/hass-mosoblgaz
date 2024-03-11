@@ -1,4 +1,5 @@
 """Mosoblgaz API"""
+
 __all__ = [
     "privacy_formatter",
     "is_privacy_logging_enabled",
@@ -32,13 +33,13 @@ from homeassistant.core import callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 
-from .const import *
 from .api import (
     AuthenticationFailedException,
     MOSCOW_TIMEZONE,
     MosoblgazAPI,
     PartialOfflineException,
 )
+from .const import *
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,9 +58,7 @@ def is_privacy_logging_enabled(
 ) -> bool:
     if isinstance(config, ConfigEntry):
         if config.source == SOURCE_IMPORT:
-            config = hass.data.get(DATA_CONFIG, {}).get(
-                config.data[CONF_USERNAME], {}
-            )
+            config = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
         else:
             config = config.options
 
@@ -88,15 +87,9 @@ AUTHENTICATION_SUBCONFIG = {
 }
 
 NAME_FORMATS_SUBCONFIG = {
-    vol.Optional(
-        CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT
-    ): cv.string,
-    vol.Optional(
-        CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT
-    ): cv.string,
-    vol.Optional(
-        CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT
-    ): cv.string,
+    vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
+    vol.Optional(CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT): cv.string,
+    vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
 }
 
 DEFAULT_FILTER_SUBCONFIG = {
@@ -119,9 +112,7 @@ FILTER_SUBCONFIG = {
 }
 
 OPTIONS_SUBCONFIG = {
-    vol.Optional(
-        CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES
-    ): cv.boolean,
+    vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
 }
 
 INTERVALS_SUBCONFIG = {
@@ -135,15 +126,13 @@ INTERVALS_SUBCONFIG = {
 
 
 def _unique_username_validator(
-    configs: List[Mapping[str, Any]]
-) -> List[Mapping[str, Any]]:
+    configs: list[Mapping[str, Any]]
+) -> list[Mapping[str, Any]]:
     existing_usernames = set()
     exceptions = []
     for i, config in enumerate(configs):
         if config[CONF_USERNAME] in existing_usernames:
-            exceptions.append(
-                vol.Invalid("duplicate username entry detected", [i])
-            )
+            exceptions.append(vol.Invalid("duplicate username entry detected", [i]))
         else:
             existing_usernames.add(config[CONF_USERNAME])
 
@@ -208,27 +197,25 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
         username = user_cfg[CONF_USERNAME]
 
         # Create logging prefix
-        log_prefix = f"(user|{get_print_username(hass, user_cfg)}) "
+        log_prefix = f"(user|{get_print_username(hass, user_cfg)})"
 
-        _LOGGER.debug(log_prefix + "Loading configuration from YAML")
+        _LOGGER.debug(f"{log_prefix} Loading configuration from YAML")
 
         # Check against internal database for existing entries
         existing_entry = _find_existing_entry(hass, username)
         if existing_entry:
             if existing_entry.source == config_entries.SOURCE_IMPORT:
                 # Do not add duplicate import entry
-                _LOGGER.debug(log_prefix + "Skipping existing import binding")
+                _LOGGER.debug(f"{log_prefix} Skipping existing import binding")
                 yaml_config[username] = user_cfg
             else:
                 # Do not add YAML entry override
-                _LOGGER.warning(
-                    log_prefix + "YAML config is overridden via UI!"
-                )
+                _LOGGER.warning(f"{log_prefix} YAML config is overridden via UI!")
             continue
 
         yaml_config[username] = user_cfg
 
-        _LOGGER.debug(log_prefix + "Creating import entry")
+        _LOGGER.debug(f"{log_prefix} Creating import entry")
 
         hass.async_create_task(
             hass.config_entries.flow.async_init(
@@ -267,7 +254,7 @@ async def async_setup_entry(
         options_cfg = config_entry.options
 
     log_prefix = f"(user|{get_print_username(hass, user_cfg)})"
-    _LOGGER.debug("%s Setting up config entry", log_prefix)
+    _LOGGER.debug(f"{log_prefix} Setting up config entry")
 
     from .api import MosoblgazAPI, MosoblgazException, today_blackout
 
@@ -293,20 +280,19 @@ async def async_setup_entry(
 
             contracts = await api_object.fetch_contracts(with_data=False)
 
-        except AuthenticationFailedException as e:
-            _LOGGER.error(log_prefix + "Error authenticating: %s", e)
+        except AuthenticationFailedException as exc:
+            _LOGGER.error(f"{log_prefix} Error authenticating: {exc}")
             raise ConfigEntryNotReady
 
         except PartialOfflineException:
             _LOGGER.error(
-                "%s Service appears to be partially offline, which prevents "
-                "the component from fetching data. Delaying config entry setup.",
-                log_prefix,
+                f"{log_prefix} Service appears to be partially offline, which prevents "
+                f"the component from fetching data. Delaying config entry setup.",
             )
             raise ConfigEntryNotReady
 
-        except MosoblgazException as e:
-            _LOGGER.error('%s API error with user: "%s"', log_prefix, e)
+        except MosoblgazException as exc:
+            _LOGGER.error(f'{log_prefix} API error with user: "{exc}"')
             raise ConfigEntryNotReady
 
     except BaseException:
@@ -314,27 +300,23 @@ async def async_setup_entry(
         raise
 
     if not contracts:
-        _LOGGER.warning("%s No contracts found under username", log_prefix)
+        _LOGGER.warning(f"{log_prefix} No contracts found under username")
         await session.close()
         return False
 
-    hass.data.setdefault(DATA_API_OBJECTS, {})[
-        config_entry.entry_id
-    ] = api_object
+    hass.data.setdefault(DATA_API_OBJECTS, {})[config_entry.entry_id] = api_object
 
     hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(
-            config_entry, SENSOR_DOMAIN
-        )
+        hass.config_entries.async_forward_entry_setup(config_entry, SENSOR_DOMAIN)
     )
 
-    _LOGGER.debug("%s Attaching options update listener", log_prefix)
+    _LOGGER.debug(f"{log_prefix} Attaching options update listener")
     options_listener = config_entry.add_update_listener(async_update_options)
     hass.data.setdefault(DATA_OPTIONS_LISTENERS, {})[
         config_entry.entry_id
     ] = options_listener
 
-    _LOGGER.debug("%s Successfully set up account", log_prefix)
+    _LOGGER.debug(f"{log_prefix} Successfully set up account")
 
     return True
 
@@ -344,9 +326,7 @@ async def async_update_options(
 ):
     """React to options update"""
     log_prefix = f"(user|{get_print_username(hass, config_entry)})"
-    _LOGGER.debug(
-        "%s Reloading configuration entry due to options update", log_prefix
-    )
+    _LOGGER.debug(f"{log_prefix} Reloading configuration entry due to options update")
     await hass.config_entries.async_reload(config_entry.entry_id)
 
 
@@ -365,35 +345,30 @@ async def async_unload_entry(
 
     log_prefix = f"(user|{print_username})"
 
-    _LOGGER.debug("%s Beginning unload procedure", log_prefix)
+    _LOGGER.debug(f"{log_prefix} Beginning unload procedure")
 
     if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
         # Remove API objects
-        _LOGGER.debug("%s Unloading updater", log_prefix)
+        _LOGGER.debug(f"{log_prefix} Unloading updater")
         updater_cancel, force_update = hass.data[DATA_UPDATERS].pop(entry_id)
         if updater_cancel:
             updater_cancel()
         if not hass.data[DATA_UPDATERS]:
             del hass.data[DATA_UPDATERS]
 
-    if (
-        DATA_API_OBJECTS in hass.data
-        and entry_id in hass.data[DATA_API_OBJECTS]
-    ):
+    if DATA_API_OBJECTS in hass.data and entry_id in hass.data[DATA_API_OBJECTS]:
         # Remove API objects
-        _LOGGER.debug("%s Unloading API object", log_prefix)
+        _LOGGER.debug(f"{log_prefix} Unloading API object")
         del hass.data[DATA_API_OBJECTS][entry_id]
         if not hass.data[DATA_API_OBJECTS]:
             del hass.data[DATA_API_OBJECTS]
 
     if DATA_ENTITIES in hass.data and entry_id in hass.data[DATA_ENTITIES]:
         # Remove references to created entities
-        _LOGGER.debug("%s Unloading entities", log_prefix)
+        _LOGGER.debug(f"{log_prefix} Unloading entities")
         del hass.data[DATA_ENTITIES][entry_id]
         await hass.async_create_task(
-            hass.config_entries.async_forward_entry_unload(
-                config_entry, SENSOR_DOMAIN
-            )
+            hass.config_entries.async_forward_entry_unload(config_entry, SENSOR_DOMAIN)
         )
         if not hass.data[DATA_ENTITIES]:
             del hass.data[DATA_ENTITIES]
@@ -402,13 +377,13 @@ async def async_unload_entry(
         DATA_OPTIONS_LISTENERS in hass.data
         and entry_id in hass.data[DATA_OPTIONS_LISTENERS]
     ):
-        _LOGGER.debug("%s Unsubscribing options updates", log_prefix)
+        _LOGGER.debug(f"{log_prefix} Unsubscribing options updates")
         hass.data[DATA_OPTIONS_LISTENERS][entry_id]()
         del hass.data[DATA_OPTIONS_LISTENERS][entry_id]
         if not hass.data[DATA_OPTIONS_LISTENERS]:
             del hass.data[DATA_OPTIONS_LISTENERS]
 
-    _LOGGER.debug("%s Main unload procedure complete", log_prefix)
+    _LOGGER.debug(f"{log_prefix} Main unload procedure complete")
 
     return True
 
@@ -421,10 +396,9 @@ async def async_migrate_entry(
     old_data = config_entry.data
 
     _LOGGER.debug(
-        'Migrating entry "%s" (type="%s") from version %s',
-        config_entry.entry_id,
-        config_entry.source,
-        current_version,
+        f'Migrating entry "{config_entry.entry_id}" '
+        f"(type={config_entry.source}) "
+        f"from version {current_version}",
     )
 
     if current_version == 1:
@@ -435,21 +409,21 @@ async def async_migrate_entry(
 
             if CONF_INVERT_INVOICES in old_data:
                 new_options = update_args.setdefault("options", {})
-                new_options[CONF_INVERT_INVOICES] = old_data[
-                    CONF_INVERT_INVOICES
-                ]
+                new_options[CONF_INVERT_INVOICES] = old_data[CONF_INVERT_INVOICES]
 
         current_version = 2
 
     config_entry.version = current_version
 
     if update_args:
-        _LOGGER.debug('Updating configuration entry "%s" with new data')
+        _LOGGER.debug(
+            f"Updating configuration entry {config_entry.entry_id} "
+            f"with new data: {update_args}"
+        )
         hass.config_entries.async_update_entry(config_entry, **update_args)
 
     _LOGGER.debug(
-        'Migration of entry "%s" to version %s successful',
-        config_entry.entry_id,
-        current_version,
+        f"Migration of entry {config_entry.entry_id} "
+        f"to version {current_version} successful",
     )
     return True
