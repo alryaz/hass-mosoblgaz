@@ -2,64 +2,82 @@
 # _Мособлгаз_ для Home Assistant
 > Предоставление информации о текущем состоянии ваших контрактов с Мособлгаз.
 >
->[![hacs_badge](https://img.shields.io/badge/HACS-Default-green.svg)](https://github.com/custom-components/hacs)
->[![Лицензия](https://img.shields.io/badge/%D0%9B%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
->[![Поддержка](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B8%D0%B2%D0%B0%D0%B5%D1%82%D1%81%D1%8F%3F-%D0%B4%D0%B0-green.svg)](https://github.com/alryaz/hass-mosoblgaz/graphs/commit-activity)
->
->[![Пожертвование Yandex](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B6%D0%B5%D1%80%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-Yandex-red.svg)](https://money.yandex.ru/to/410012369233217)
->[![Пожертвование PayPal](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B6%D0%B5%D1%80%D1%82%D0%B2%D0%BE%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5-Paypal-blueviolet.svg)](https://www.paypal.me/alryaz)
+> [![hacs_badge](https://img.shields.io/badge/HACS-Default-green.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
+> [![Лицензия](https://img.shields.io/badge/%D0%9B%D0%B8%D1%86%D0%B5%D0%BD%D0%B7%D0%B8%D1%8F-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+> [![Поддержка](https://img.shields.io/badge/%D0%9F%D0%BE%D0%B4%D0%B4%D0%B5%D1%80%D0%B6%D0%B8%D0%B2%D0%B0%D0%B5%D1%82%D1%81%D1%8F%3F-%D0%B4%D0%B0-green.svg?style=for-the-badge)](https://github.com/alryaz/hass-mosoblgaz/graphs/commit-activity)
 
-> **Техническая поддержка:** [![Группа в Telegram](https://img.shields.io/endpoint?url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Falryaz_ha_addons)](https://telegram.dog/alryaz_ha_addons)
+> 💵 **Пожертвование на развитие проекта**  
+> [![Пожертвование YooMoney](https://img.shields.io/badge/YooMoney-8B3FFD.svg?style=for-the-badge)](https://yoomoney.ru/to/410012369233217)
+> [![Пожертвование Тинькофф](https://img.shields.io/badge/Tinkoff-F8D81C.svg?style=for-the-badge)](https://www.tinkoff.ru/cf/3g8f1RTkf5G)
+> [![Пожертвование Cбербанк](https://img.shields.io/badge/Сбербанк-green.svg?style=for-the-badge)](https://www.sberbank.com/ru/person/dl/jc?linkname=3pDgknI7FY3z7tJnN)
+> [![Пожертвование DonationAlerts](https://img.shields.io/badge/DonationAlerts-fbaf2b.svg?style=for-the-badge)](https://www.donationalerts.com/r/alryaz)
+>
+> 💬 **Техническая поддержка**  
+> [![Группа в Telegram](https://img.shields.io/endpoint?url=https%3A%2F%2Ftg.sumanjay.workers.dev%2Falryaz_ha_addons&style=for-the-badge)](https://telegram.dog/alryaz_ha_addons)
+
+[![My Home Assistant](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?repository=hass-mosoblgaz&owner=alryaz&category=Integration)
 
 Данная интеграция предоставляет возможность системе HomeAssistant опрашивать API Мособлгаза.
 
 ## Скриншоты
-[<img alt="Лицевой счёт" src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/contract_glance.png" height="240">](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/contract_glance.png)
-[<img alt="Счётчик МОГ" src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png" height="240">](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png)
-[<img alt="Квитанция" src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png" height="240">](https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png)
+
+<details>
+    <summary>Лицевой счёт Мособлгаз</summary>
+    <img src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/contract_glance.png" alt="Скриншот: лицевой счёт Мособлгаз">
+</details>
+<details>
+    <summary>Счётчик Мособлгаз</summary>
+    <img src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/meter_glance.png" alt="Скриншот: счётчик Мособлгаз">
+</details>
+<details>
+    <summary>Квитанция Мособлгаз</summary>
+    <img src="https://raw.githubusercontent.com/alryaz/hass-mosoblgaz/master/images/invoice_glance.png" alt="Скриншот: квитанция Мособлгаз">
+</details>
 
 ## Установка
-### Посредством HACS
-1. Откройте HACS (через `Extensions` в боковой панели)
-1. Добавьте новый произвольный репозиторий:
-   1. Выберите `Integration` (`Интеграция`) в качестве типа репозитория
-   1. Введите ссылку на репозиторий: `https://github.com/alryaz/hass-mosoblgaz`
-   1. Нажмите кнопку `Add` (`Добавить`)
-   1. Дождитесь добавления репозитория (занимает до 10 секунд)
-   1. Теперь вы должны видеть доступную интеграцию `Mosoblgaz (Мособлгаз)` в списке новых интеграций.
-1. Нажмите кнопку `Install` чтобы увидеть доступные версии
-1. Установите последнюю версию нажатием кнопки `Install`
-1. Перезапустите Home Assistant
 
-_Примечание:_ Не рекомендуется устанавливать ветку `master`. Она используется исключительно для разработки. 
+### Home Assistant Community Store
+
+> 🎉  **Рекомендованный метод установки.**
+
+[![Открыть Ваш Home Assistant и открыть репозиторий внутри Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alryaz&repository=hass-mosoblgaz&category=integration)
+
+1. Установите HACS ([инструкция по установке на оф. сайте](https://hacs.xyz/docs/installation/installation/)).
+2. Добавьте репозиторий в список дополнительных:
+    1. Откройте главную страницу _HACS_.
+    2. Откройте раздел _Интеграции (Integrations)_.
+    3. Нажмите три точки сверху справа (дополнительное меню).
+    4. Выберите _Пользовательские репозитории_.
+    5. Скопируйте `https://github.com/alryaz/hass-mosoblgaz` в поле ввода
+    6. Выберите _Интеграция (Integration)_ в выпадающем списке.
+    7. Нажмите _Добавить (Add)_.
+3. Найдите `Mosoblgaz` в поиске по интеграциям.
+4. Установите последнюю версию компонента, нажав на кнопку `Установить` (`Install`).
+5. Перезапустите сервер _Home Assistant_.
 
 ### Вручную
-Клонируйте репозиторий во временный каталог, затем создайте каталог `custom_components` внутри папки конфигурации
-вашего Home Assistant (если она еще не существует). Затем переместите папку `mosoblgaz` из папки `custom_components` 
-репозитория в папку `custom_components` внутри папки конфигурации Home Assistant.
-Пример (при условии, что конфигурация Home Assistant доступна по адресу `/mnt/homeassistant/config`) для Unix-систем:
-```
-git clone https://github.com/alryaz/hass-mosoblgaz.git hass-mosoblgaz
-mkdir -p /mnt/homeassistant/config/custom_components
-mv hass-mosoblgaz/custom_components/mosoblgaz /mnt/homeassistant/config/custom_components
-```
+
+> ⚠️ **Внимание!** Данный вариант **<ins>не рекомендуется</ins>** в силу
+> сложности поддержки установленной интеграции в актуальном состоянии.
+
+1. Скачайте [архив с актуальной стабильной версией интеграции](https://github.com/alryaz/hass-mosoblgaz/releases/latest/download/mosoblgaz.zip)
+2. Создайте папку (если не существует) `custom_components` внутри папки с конфигурацией Home Assistant
+3. Создайте папку `mosoblgaz` внутри папки `custom_components`
+4. Извлеките содержимое скачанного архива в папку `mosoblgaz`
+5. Перезапустите сервер _Home Assistant_
 
 ## Конфигурация
-### Через интерфейс Home Assistant
 
-[![​Open your Home Assistant instance and start setting up a new integration.​](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=mosoblgaz)
+### Через интерфейс _"Интеграции"_
 
-1. Откройте `Настройки` -> `Интеграции`
-1. Нажмите внизу справа страницы кнопку с плюсом
-1. Введите в поле поиска `Mosoblgaz` или `Мособлгаз`
-   1. Если по какой-то причине интеграция не была найдена, убедитесь, что HomeAssistant был перезапущен после установки интеграции.
-1. Выберите первый результат из списка
-1. Введите данные вашей учётной записи для ЛК _"Мособлгаз"_
-1. Нажмите кнопку `Продолжить`
-1. Через несколько секунд начнётся обновление; проверяйте список ваших объектов на наличие
-   объектов, чьи названия начинаются на `MOG`.
+Поддерживается базовый функционал конфигурации через веб-интерфейс _Home
+Assistant_. Конфигурация данным способов
+возможна без перезагрузки _Home Assistant_.
+
+[![Установить интеграцию mosoblgaz](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start/?domain=mosoblgaz)
    
 ### Через `configuration.yaml`
+
 #### Базовая конфигурация
 Для настройки данной интеграции потребуются данные авторизации в ЛК Мособлгаз.  
 `username` - Имя пользователя (телефон / адрес эл. почты)  
