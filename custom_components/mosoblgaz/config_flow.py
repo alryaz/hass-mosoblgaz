@@ -15,6 +15,11 @@ from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
 from . import privacy_formatter
+from .api import (
+    AuthenticationFailedException,
+    MosoblgazException,
+    PartialOfflineException,
+)
 from .const import (
     CONF_INVERT_INVOICES,
     CONF_PRIVACY_LOGGING,
@@ -23,11 +28,6 @@ from .const import (
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
-)
-from .api import (
-    AuthenticationFailedException,
-    MosoblgazException,
-    PartialOfflineException,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -62,9 +62,7 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return False
 
     # Initial step for user interaction
-    async def async_step_user(
-        self, user_input: Optional[Dict[str, Any]] = None
-    ):
+    async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
         """Handle a flow start."""
         if user_input is None:
             return self.async_show_form(
@@ -123,9 +121,7 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         except MosoblgazException:
             return self.async_abort("api_error")
 
-        return self.async_create_entry(
-            title="User: " + username, data=user_input
-        )
+        return self.async_create_entry(title="User: " + username, data=user_input)
 
     async def async_step_import(self, user_input=None):
         """
@@ -187,8 +183,7 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
         :return: Flow response
         """
         _LOGGER.debug(
-            "%s Showing options form for imported configuration",
-            self.log_prefix,
+            f"{self.log_prefix} Showing options form for imported configuration"
         )
         return self.async_show_form(step_id="import")
 
@@ -199,13 +194,10 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
         :return: Flow response
         """
         if user_input is not None:
-            _LOGGER.debug("%s Saving options configuration", self.log_prefix)
-            _LOGGER.debug("%s Saving: %s", self.log_prefix, user_input)
+            _LOGGER.debug(f"{self.log_prefix} Saving options: {user_input}")
             return self.async_create_entry(title="", data=user_input)
 
-        _LOGGER.debug(
-            "%s Showing options form for GUI configuration", self.log_prefix
-        )
+        _LOGGER.debug(f"{self.log_prefix} Showing options form for GUI configuration")
 
         options = self.config_entry.options or {}
 
@@ -213,9 +205,7 @@ class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
             CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES
         )
         default_timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        default_scan_interval = options.get(
-            CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL
-        )
+        default_scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
         default_privacy_logging = options.get(
             CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING
         )

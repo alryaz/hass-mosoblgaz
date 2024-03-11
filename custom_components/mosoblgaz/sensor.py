@@ -2,6 +2,7 @@
 Sensor for Mosoblgaz cabinet.
 Retrieves values regarding current state of contracts.
 """
+
 import asyncio
 import logging
 from datetime import datetime, timedelta
@@ -9,12 +10,9 @@ from functools import partial
 from typing import (
     Any,
     Callable,
-    Dict,
     Iterable,
-    List,
     Mapping,
     Optional,
-    Tuple,
     Type,
     Union,
 )
@@ -32,7 +30,7 @@ from homeassistant.const import (
     ATTR_ENTITY_ID,
     CONF_SCAN_INTERVAL,
     CONF_USERNAME,
-    VOLUME_CUBIC_METERS,
+    UnitOfVolume,
 )
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers.entity import Entity
@@ -40,7 +38,6 @@ from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.typing import ConfigType, HomeAssistantType
 
 from . import get_print_username, is_privacy_logging_enabled, privacy_formatter
-from .const import *
 from .api import (
     Contract,
     INVOICE_GROUP_GAS,
@@ -52,6 +49,7 @@ from .api import (
     MosoblgazException,
     PartialOfflineException,
 )
+from .const import *
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
@@ -63,9 +61,7 @@ INDICATIONS_MAPPING_SCHEMA = vol.Schema(
 
 INDICATIONS_SEQUENCE_SCHEMA = vol.All(
     vol.Any(vol.All(cv.positive_float, cv.ensure_list), [cv.positive_float]),
-    lambda x: dict(
-        map(lambda y: ("t" + str(y[0]), y[1]), enumerate(x, start=1))
-    ),
+    lambda x: dict(map(lambda y: ("t" + str(y[0]), y[1]), enumerate(x, start=1))),
 )
 
 SERVICE_PUSH_INDICATIONS: Final = "push_indications"
@@ -83,9 +79,7 @@ SERVICE_PUSH_INDICATIONS_SCHEMA: Final = vol.Schema(
                     INDICATIONS_SEQUENCE_SCHEMA,
                 ),
                 # vol.Optional(ATTR_IGNORE_PERIOD, default=False): cv.boolean,
-                vol.Optional(
-                    ATTR_IGNORE_INDICATIONS, default=False
-                ): cv.boolean,
+                vol.Optional(ATTR_IGNORE_INDICATIONS, default=False): cv.boolean,
                 vol.Optional(ATTR_INCREMENTAL, default=False): cv.boolean,
                 vol.Optional("notification"): lambda x: x,
             }
@@ -97,12 +91,10 @@ SERVICE_PUSH_INDICATIONS_SCHEMA: Final = vol.Schema(
 
 def get_should_add_entities(
     contract_id: str,
-    default_add_contracts: Union[
-        bool, Mapping[str, Any]
-    ] = DEFAULT_ADD_CONTRACTS,
+    default_add_contracts: Union[bool, Mapping[str, Any]] = DEFAULT_ADD_CONTRACTS,
     default_add_meters: bool = DEFAULT_ADD_METERS,
     default_add_invoices: bool = DEFAULT_ADD_INVOICES,
-) -> Tuple[bool, bool, bool]:
+) -> tuple[bool, bool, bool]:
     """
     Whether entities should be added to a given contract ID according to config.
     :param contract_id:
@@ -155,13 +147,13 @@ async def async_account_updater(
         config_entry,
         privacy_logging=privacy_logging_enabled,
     )
-    log_prefix = f"(user|{print_username}) "
+    log_prefix = f"(user|{print_username})"
 
-    _LOGGER.debug(log_prefix + f"Running updater at {datetime.now()}")
+    _LOGGER.debug(f"{log_prefix} Running updater at {now or datetime.now()}")
     api: "MosoblgazAPI" = hass.data.get(DATA_API_OBJECTS, {}).get(entry_id)
 
     if not api:
-        _LOGGER.debug(log_prefix + "Updater found no API object")
+        _LOGGER.debug(f"{log_prefix} Updater found no API object")
         return False
 
     try:
@@ -169,32 +161,26 @@ async def async_account_updater(
         contracts = await api.fetch_contracts(with_data=True)
 
     except PartialOfflineException:
-        _LOGGER.error(log_prefix + "Partial offline, will delay entity update")
+        _LOGGER.error(f"{log_prefix} Partial offline, will delay entity update")
         return False
 
-    except MosoblgazException as e:
-        _LOGGER.error(log_prefix + f"Error fetching contracts: {e}")
+    except MosoblgazException as exc:
+        _LOGGER.error(f"{log_prefix} Error fetching contracts: {exc}")
         return False
 
     # Do not process contracts if none received
     # Return zero new entities
     if not contracts:
-        _LOGGER.info(log_prefix + "Did not receive any contract data")
+        _LOGGER.info(f"{log_prefix} Did not receive any contract data")
         return 0
 
     # Entity adding defaults
     if config_entry.source == SOURCE_IMPORT:
         default_add_meters = user_cfg.get(CONF_METERS, DEFAULT_ADD_METERS)
-        default_add_invoices = user_cfg.get(
-            CONF_INVOICES, DEFAULT_ADD_INVOICES
-        )
-        default_add_contracts = user_cfg.get(
-            CONF_CONTRACTS, DEFAULT_ADD_CONTRACTS
-        )
+        default_add_invoices = user_cfg.get(CONF_INVOICES, DEFAULT_ADD_INVOICES)
+        default_add_contracts = user_cfg.get(CONF_CONTRACTS, DEFAULT_ADD_CONTRACTS)
 
-        name_format_meters = user_cfg.get(
-            CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT
-        )
+        name_format_meters = user_cfg.get(CONF_METER_NAME, DEFAULT_METER_NAME_FORMAT)
         name_format_invoices = user_cfg.get(
             CONF_INVOICE_NAME, DEFAULT_INVOICE_NAME_FORMAT
         )
@@ -217,9 +203,7 @@ async def async_account_updater(
     invert_invoices = options_cfg.get(CONF_INVERT_INVOICES)
 
     # Prepare created entities holder
-    entry_entities = hass.data.setdefault(DATA_ENTITIES, {}).setdefault(
-        entry_id, {}
-    )
+    entry_entities = hass.data.setdefault(DATA_ENTITIES, {}).setdefault(entry_id, {})
 
     # Prepare temporary data holders
     tasks = []
@@ -261,22 +245,22 @@ async def async_account_updater(
         if privacy_logging_enabled:
             print_contract_id = privacy_formatter(print_contract_id)
 
-        contract_log_prefix = log_prefix + f"(contract|{print_contract_id}) "
+        contract_log_prefix = f"{log_prefix} (contract|{print_contract_id})"
 
         # Prepare entities holder
         if contract_id in entry_entities:
-            _LOGGER.debug(contract_log_prefix + "Refreshing entity data")
+            _LOGGER.debug(f"{contract_log_prefix} Refreshing entity data")
             contract_entities = entry_entities[contract_id]
         else:
             contract_entities = {}
             entry_entities[contract_id] = contract_entities
-            _LOGGER.debug(contract_log_prefix + "Setting up new entities")
+            _LOGGER.debug(f"{contract_log_prefix} Setting up new entities")
 
-        contract_entities: Dict[
+        contract_entities: dict[
             Type[MOGEntity],
             Union[
                 MOGContractSensor,
-                Dict[str, Union[MOGMeterSensor, MOGInvoiceSensor]],
+                dict[str, Union[MOGMeterSensor, MOGInvoiceSensor]],
             ],
         ]
 
@@ -296,14 +280,11 @@ async def async_account_updater(
             contract_entity.contract = contract
 
             if contract_entity.enabled:
-                _LOGGER.debug(contract_log_prefix + "Updating contract entity")
-                contract_entity.async_schedule_update_ha_state(
-                    force_refresh=True
-                )
+                _LOGGER.debug(f"{contract_log_prefix} Updating contract entity")
+                contract_entity.async_schedule_update_ha_state(force_refresh=True)
             else:
                 _LOGGER.debug(
-                    contract_log_prefix
-                    + "Not updating disabled contract entity"
+                    f"{contract_log_prefix} Not updating disabled contract entity"
                 )
 
         else:
@@ -315,7 +296,7 @@ async def async_account_updater(
             new_entities.append(contract_entity)
             contract_entities[MOGContractSensor] = contract_entity
             tasks.append(contract_entity.async_update())
-            _LOGGER.debug(contract_log_prefix + "Creating new contract entity")
+            _LOGGER.debug(f"{contract_log_prefix} Creating new contract entity")
 
         # Process meter entities
         meters = contract.meters
@@ -333,22 +314,18 @@ async def async_account_updater(
             if privacy_logging_enabled:
                 print_meter_id = privacy_formatter(print_meter_id)
 
-            meter_log_prefix = (
-                contract_log_prefix + f"(meter|{print_meter_id})"
-            )
+            meter_log_prefix = f"{contract_log_prefix} (meter|{print_meter_id})"
 
             if meter_entity:
                 meter_entity.contract = contract
                 meter_entity.meter = meter
 
                 if meter_entity.enabled:
-                    _LOGGER.debug(meter_log_prefix + "Updating meter entity")
-                    meter_entity.async_schedule_update_ha_state(
-                        force_refresh=True
-                    )
+                    _LOGGER.debug(f"{meter_log_prefix} Updating meter entity")
+                    meter_entity.async_schedule_update_ha_state(force_refresh=True)
                 else:
                     _LOGGER.debug(
-                        meter_log_prefix + "Not updating disabled meter entity"
+                        f"{meter_log_prefix} Not updating disabled meter entity"
                     )
             else:
                 meter_entity = MOGMeterSensor(
@@ -360,7 +337,7 @@ async def async_account_updater(
                 new_entities.append(meter_entity)
                 meter_entities[meter_id] = meter_entity
                 tasks.append(meter_entity.async_update())
-                _LOGGER.debug(meter_log_prefix + "Adding new meter entity")
+                _LOGGER.debug(f"{meter_log_prefix} Adding new meter entity")
 
         # Process invoice entities
         invoice_entities = contract_entities.setdefault(MOGInvoiceSensor, {})
@@ -373,9 +350,7 @@ async def async_account_updater(
                 group_code
             )
 
-            invoice_log_prefix = (
-                contract_log_prefix + f"(invoice|{group_code}) "
-            )
+            invoice_log_prefix = f"{contract_log_prefix} (invoice|{group_code})"
 
             if invoice_entity:
                 if not invoices:
@@ -386,14 +361,11 @@ async def async_account_updater(
                 invoice_entity.invoices = invoices
 
                 if invoice_entity.enabled:
-                    _LOGGER.debug(invoice_log_prefix + "Updating meter entity")
-                    invoice_entity.async_schedule_update_ha_state(
-                        force_refresh=True
-                    )
+                    _LOGGER.debug(f"{invoice_log_prefix} Updating meter entity")
+                    invoice_entity.async_schedule_update_ha_state(force_refresh=True)
                 else:
                     _LOGGER.debug(
-                        invoice_log_prefix
-                        + "Not updating disabled meter entity"
+                        f"{invoice_log_prefix} Not updating disabled meter entity"
                     )
 
             elif invoices:
@@ -410,17 +382,14 @@ async def async_account_updater(
                 tasks.append(invoice_entity.async_update())
                 if invert_invoices:
                     _LOGGER.debug(
-                        invoice_log_prefix
-                        + "Adding new inverted invoice entity"
+                        f"{invoice_log_prefix} Adding new inverted invoice entity"
                     )
                 else:
-                    _LOGGER.debug(
-                        invoice_log_prefix + "Adding new invoice entity"
-                    )
+                    _LOGGER.debug(f"{invoice_log_prefix} Adding new invoice entity")
 
         if obsolete_group_codes:
             _LOGGER.debug(
-                contract_log_prefix + f"Removing invoices for "
+                f"{contract_log_prefix} Removing invoices for "
                 f"obsolete groups: {obsolete_group_codes}",
             )
             for group_code in obsolete_group_codes:
@@ -429,14 +398,14 @@ async def async_account_updater(
 
     # Perform scheduled tasks before other procedures
     if tasks:
-        _LOGGER.debug(log_prefix + f"Performing {len(tasks)} tasks")
+        _LOGGER.debug(f"{log_prefix} Performing {len(tasks)} tasks")
         await asyncio.wait(list(map(hass.loop.create_task, tasks)))
 
     if new_entities:
-        _LOGGER.debug(log_prefix + f"Adding {len(new_entities)} new entities")
+        _LOGGER.debug(f"{log_prefix} Adding {len(new_entities)} new entities")
         async_add_entities(new_entities)
     else:
-        _LOGGER.debug(log_prefix + f"Not adding new entities")
+        _LOGGER.debug(f"{log_prefix} Not adding new entities")
 
     return len(new_entities)
 
@@ -462,21 +431,17 @@ async def async_setup_entry(
     else:
         options_cfg = config_entry.options
 
-    log_prefix = f"(user|{get_print_username(hass, config_entry)}) "
+    log_prefix = f"(user|{get_print_username(hass, config_entry)})"
 
     _LOGGER.debug(log_prefix + f'Setting up entry "{config_entry.entry_id}"')
 
-    update_call = partial(
-        async_account_updater, hass, config_entry, async_add_devices
-    )
+    update_call = partial(async_account_updater, hass, config_entry, async_add_devices)
 
     try:
         result = await update_call()
 
         if result is False:
-            _LOGGER.error(
-                log_prefix + "Error running updater (see messages above)"
-            )
+            _LOGGER.error(f"{log_prefix} Error running updater (see messages above)")
             return False
 
         if result == 0:
@@ -508,20 +473,21 @@ async def async_setup_entry(
                 updater_cancel = async_track_time_interval(
                     hass, update_call, config_scan_interval
                 )
-                hass.data.setdefault(DATA_UPDATERS, {})[
-                    config_entry.entry_id
-                ] = (updater_cancel, force_update)
+                hass.data.setdefault(DATA_UPDATERS, {})[config_entry.entry_id] = (
+                    updater_cancel,
+                    force_update,
+                )
 
         await force_update()
 
         _LOGGER.info(
-            log_prefix + f"Will update account every "
+            f"{log_prefix} Will update account every "
             f"{config_scan_interval.total_seconds()} seconds",
         )
         return True
 
-    except MosoblgazException as e:
-        raise PlatformNotReady(f"Critical error occurred: {e}") from None
+    except MosoblgazException as exc:
+        raise PlatformNotReady(f"Critical error occurred: {exc}") from None
 
 
 # noinspection PyUnusedLocal
@@ -660,7 +626,7 @@ class MOGMeterSensor(MOGEntity):
     """The class for this sensor"""
 
     _attr_ico: str = "mdi:counter"
-    _attr_unit_of_measurement: str = VOLUME_CUBIC_METERS
+    _attr_unit_of_measurement: str = UnitOfVolume.CUBIC_METERS
     _attr_device_class: SensorDeviceClass = SensorDeviceClass.GAS
     _attr_supported_features: int = FEATURE_PUSH_INDICATIONS
 
@@ -715,9 +681,7 @@ class MOGMeterSensor(MOGEntity):
                 None,
             )
         )
-        extra_state_attributes[
-            ATTR_STATE_CLASS
-        ] = SensorStateClass.TOTAL_INCREASING
+        extra_state_attributes[ATTR_STATE_CLASS] = SensorStateClass.TOTAL_INCREASING
 
         self._attr_extra_state_attributes = extra_state_attributes
 
@@ -744,8 +708,7 @@ class MOGMeterSensor(MOGEntity):
         call_data: Mapping[str, Any],
         event_data: Mapping[str, Any],
         event_id: str,
-        title: str,
-    ):
+    ) -> None:
         hass = self.hass
         comment = event_data.get(ATTR_COMMENT)
 
@@ -769,13 +732,11 @@ class MOGMeterSensor(MOGEntity):
             ATTR_CALL_PARAMS: dict(call_data),
             ATTR_SUCCESS: False,
             ATTR_INDICATIONS: None,
-            ATTR_COMMENT: None,
+            ATTR_COMMENT: message,
             **event_data,
         }
 
-        _LOGGER.debug(
-            "Firing event '%s' with post_fields: %s" % (event_id, event_data)
-        )
+        _LOGGER.debug(f"Firing {event_id} with fields: {event_data}")
 
         hass.bus.async_fire(event_type=event_id, event_data=event_data)
 
@@ -783,9 +744,7 @@ class MOGMeterSensor(MOGEntity):
     def _get_real_indications(
         meter: Meter, call_data: Mapping
     ) -> Mapping[str, Union[int, float]]:
-        indications: Dict[str, Union[int, float]] = dict(
-            call_data[ATTR_INDICATIONS]
-        )
+        indications: dict[str, Union[int, float]] = dict(call_data[ATTR_INDICATIONS])
         is_incremental = call_data[ATTR_INCREMENTAL]
 
         try:
@@ -831,29 +790,27 @@ class MOGMeterSensor(MOGEntity):
             )  # compatibility with common
 
             new_indication = indications["t1"]
-            event_data[
-                ATTR_INDICATION
-            ] = new_indication  # integration-specific
+            event_data[ATTR_INDICATION] = new_indication  # integration-specific
 
             await meter.push_indication(
                 new_indication,
                 ignore_values=call_data[ATTR_IGNORE_INDICATIONS],
             )
 
-        except MosoblgazException as e:
-            event_data[ATTR_COMMENT] = "API error: %s" % e
+        except MosoblgazException as exc:
+            event_data[ATTR_COMMENT] = f"API error: {exc}"
             raise
 
-        except BaseException as e:
-            event_data[ATTR_COMMENT] = "Unknown error: %r" % e
-            _LOGGER.error(event_data[ATTR_COMMENT])
+        except BaseException as exc:
+            event_data[ATTR_COMMENT] = f"Unknown error: {exc}"
+            _LOGGER.error(event_data[ATTR_COMMENT], exc_info=exc)
             raise
 
         else:
             event_data[ATTR_COMMENT] = "Indications submitted successfully"
             event_data[ATTR_SUCCESS] = True
 
-            # @TODO: this looks weird, but this is the component was made
+            # @TODO: this looks weird, but this is how the component was made
             await self.async_update_bound_account()
             self.async_schedule_update_ha_state(force_refresh=True)
 
@@ -862,7 +819,6 @@ class MOGMeterSensor(MOGEntity):
                 call_data,
                 event_data,
                 DOMAIN + "_" + SERVICE_PUSH_INDICATIONS,
-                "Передача показаний",
             )
 
             _LOGGER.info("End handling indications submission")
@@ -893,7 +849,7 @@ class MOGInvoiceSensor(MOGEntity):
         contract: Contract,
         name_format: str,
         group_code: str,
-        invoices: Dict[Tuple[int, int], "Invoice"],
+        invoices: dict[tuple[int, int], "Invoice"],
         invert_state: bool = False,
         default_add: bool = DEFAULT_ADD_INVOICES,
     ):
@@ -922,11 +878,11 @@ class MOGInvoiceSensor(MOGEntity):
         )
 
     @property
-    def invoices(self) -> List["Invoice"]:
+    def invoices(self) -> list["Invoice"]:
         return self._invoices
 
     @invoices.setter
-    def invoices(self, value: Dict[Tuple[int, int], "Invoice"]):
+    def invoices(self, value: dict[tuple[int, int], "Invoice"]):
         self._invoices = list(
             sorted(value.values(), key=lambda x: x.period, reverse=True)
         )
@@ -962,9 +918,7 @@ class MOGInvoiceSensor(MOGEntity):
             attributes[ATTR_PAYMENTS_COUNT] = last_invoice.payments_count
 
             # Update state
-            state_value = (
-                last_invoice.paid + last_invoice.balance - last_invoice.total
-            )
+            state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
             if self._invert_state:
                 state_value *= -1
 
@@ -980,15 +934,13 @@ class MOGInvoiceSensor(MOGEntity):
             previous_invoice = self.previous_invoice
 
             if previous_invoice:
-                attributes[
-                    ATTR_PREVIOUS_PERIOD
-                ] = previous_invoice.period.isoformat()
+                attributes[ATTR_PREVIOUS_PERIOD] = previous_invoice.period.isoformat()
                 attributes[ATTR_PREVIOUS_TOTAL] = previous_invoice.total
                 attributes[ATTR_PREVIOUS_PAID] = previous_invoice.paid
                 attributes[ATTR_PREVIOUS_BALANCE] = previous_invoice.balance
-                attributes[
-                    ATTR_PREVIOUS_PAYMENTS_COUNT
-                ] = previous_invoice.payments_count
+                attributes[ATTR_PREVIOUS_PAYMENTS_COUNT] = (
+                    previous_invoice.payments_count
+                )
 
     @property
     def icon(self) -> str | None:

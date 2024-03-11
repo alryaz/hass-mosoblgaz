@@ -11,8 +11,8 @@ from dateutil.tz import gettz
 
 _LOGGER = logging.getLogger(__name__)
 
-HistoryEntryDataType = Dict[str, Union[str, Dict[str, int]]]
-DeviceDataType = Dict[str, Any]
+HistoryEntryDataType = dict[str, Union[str, dict[str, int]]]
+DeviceDataType = dict[str, Any]
 InvoiceDataType = Mapping[str, Any]
 
 INVOICE_GROUP_GAS = "gas"
@@ -21,7 +21,7 @@ INVOICE_GROUP_TECH = "tech"
 INVOICE_GROUPS = (INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH)
 
 
-def convert_date_dict(date_dict: Dict[str, Union[str, int]]) -> datetime:
+def convert_date_dict(date_dict: dict[str, Union[str, int]]) -> datetime:
     return datetime.fromisoformat(date_dict["date"]).replace(
         tzinfo=gettz(date_dict["timezone"])
     )
@@ -32,7 +32,7 @@ MOSCOW_TIMEZONE = gettz("Europe/Moscow")
 
 def today_blackout(
     check: Optional[datetime] = None,
-) -> Union[Tuple[datetime, datetime], bool]:
+) -> Union[tuple[datetime, datetime], bool]:
     today = datetime.now(tz=MOSCOW_TIMEZONE)
     blackout_start = today.replace(hour=5, minute=30, second=0)
     blackout_end = today.replace(hour=6, minute=0, second=0)
@@ -265,7 +265,7 @@ class MosoblgazAPI:
         self._session = session or aiohttp.ClientSession()
         self._x_system_auth_token: str | None = x_system_auth_token
 
-        self._contracts: Dict[str, Contract] = {}
+        self._contracts: dict[str, Contract] = {}
 
     @property
     def is_logged_in(self):
@@ -290,8 +290,8 @@ class MosoblgazAPI:
                 if results is None:
                     raise AuthenticationFailedException("No CSRF token found")
 
-        except aiohttp.ClientError as e:
-            error_msg = f"Error fetching CSRF token: {e}"
+        except aiohttp.ClientError as exc:
+            error_msg = f"Error fetching CSRF token: {exc}"
             _LOGGER.error(error_msg)
             raise AuthenticationFailedException(error_msg)
 
@@ -342,8 +342,8 @@ class MosoblgazAPI:
                 if results is None:
                     raise AuthenticationFailedException("No X-SYSTEM-AUTH token found")
 
-        except aiohttp.ClientError as e:
-            error_msg = f"Error fetching X-SYSTEM-AUTH token: {e}"
+        except aiohttp.ClientError as exc:
+            error_msg = f"Error fetching X-SYSTEM-AUTH token: {exc}"
             _LOGGER.error(error_msg)
             raise AuthenticationFailedException(error_msg)
 
@@ -413,10 +413,6 @@ class MosoblgazAPI:
 
                 _LOGGER.debug(f"Authentication on account {self.__username} successful")
 
-            cookies = self._session.cookie_jar.filter_cookies(self.BASE_URL)
-            for key, cookie in cookies.items():
-                _LOGGER.debug('CooKey: "%s", Value: "%s"' % (cookie.key, cookie.value))
-
             async with self._session.head(self.BASE_URL + "/lkk3/") as response:
                 graphql_token = response.headers.get("Token")
 
@@ -426,7 +422,7 @@ class MosoblgazAPI:
                     )
                     raise AuthenticationFailedException("Failed to grab GraphQL token")
 
-                _LOGGER.debug("GraphQL token: %s" % graphql_token)
+                _LOGGER.debug(f"GraphQL token: {graphql_token}")
 
                 self.__graphql_token = graphql_token
 
@@ -437,13 +433,13 @@ class MosoblgazAPI:
             )
 
     async def perform_single_query(
-        self, query: str, variables: Optional[Dict[str, Any]] = None
+        self, query: str, variables: Optional[dict[str, Any]] = None
     ):
         return (await self.perform_queries([(query, variables)]))[0]
 
     async def perform_queries(
-        self, queries: List[Union[str, Tuple[str, Optional[Dict[str, Any]]]]]
-    ) -> List[Dict[str, Any]]:
+        self, queries: list[Union[str, tuple[str, Optional[dict[str, Any]]]]]
+    ) -> list[dict[str, Any]]:
         """Perform multiple queries at once."""
         if not self.is_logged_in:
             raise AuthenticationFailedException(
@@ -476,7 +472,7 @@ class MosoblgazAPI:
             )
 
         if _LOGGER.level == logging.DEBUG:
-            _LOGGER.debug("Sending payload: %s", payload)
+            _LOGGER.debug(f"Sending payload: {payload}")
 
         try:
             async with self._session.post(
@@ -504,14 +500,14 @@ class MosoblgazAPI:
             raise QueryFailedException("Timeout executing query")
 
     @property
-    def contracts(self) -> Dict[str, "Contract"]:
+    def contracts(self) -> dict[str, "Contract"]:
         return self._contracts
 
     @staticmethod
     def check_statuses_response(
-        statuses_response: Dict[str, Union[bool, str]],
+        statuses_response: dict[str, Union[bool, str]],
         raise_for_statuses: bool = True,
-        check_keys: Optional[Dict[str, Union[bool, str]]] = None,
+        check_keys: Optional[dict[str, Union[bool, str]]] = None,
         with_default: bool = True,
     ):
         if "internalSystemStatuses" in statuses_response:
@@ -549,7 +545,7 @@ class MosoblgazAPI:
 
     async def fetch_contracts(
         self, with_data: bool = False, raise_for_statuses: bool = True
-    ) -> Dict[str, "Contract"]:
+    ) -> dict[str, "Contract"]:
         _LOGGER.debug("Fetching contracts list")
 
         statuses_query = Queries.query("getInternalSystemStatuses")
@@ -642,15 +638,15 @@ class Contract:
         self,
         api: MosoblgazAPI,
         contract_id: str,
-        device_ids: Optional[Set[str]] = None,
+        device_ids: Optional[set[str]] = None,
     ):
         self.api = api
 
         self._contract_id = contract_id
-        self._devices: Dict[str, Optional[Device]] = (
+        self._devices: dict[str, Optional[Device]] = (
             {} if device_ids is None else dict.fromkeys(device_ids, None)
         )
-        self._invoices: Optional[Dict[str, Dict[Tuple[int, int], Invoice]]] = None
+        self._invoices: Optional[dict[str, dict[tuple[int, int], Invoice]]] = None
 
         self._data = None
 
@@ -665,7 +661,7 @@ class Contract:
         return self._data
 
     @data.setter
-    def data(self, value: Dict[str, Any]):
+    def data(self, value: dict[str, Any]):
         self._data = value
 
         device_ids = set()
@@ -718,7 +714,7 @@ class Contract:
                     del invoices[invoice_key]
 
     @property
-    def _property_data(self) -> Dict[str, Any]:
+    def _property_data(self) -> dict[str, Any]:
         if self._data is None:
             raise ContractUpdateRequiredException(self)
         return self._data
@@ -754,7 +750,7 @@ class Contract:
         return self._devices
 
     @property
-    def meters(self) -> Dict[str, "Meter"]:
+    def meters(self) -> dict[str, "Meter"]:
         return {i: d for i, d in self.devices.items() if isinstance(d, Meter)}
 
     async def update_data(self):
@@ -776,14 +772,14 @@ class Contract:
     @property
     def all_invoices_by_groups(
         self,
-    ) -> Dict[str, Dict[Tuple[int, int], "Invoice"]]:
+    ) -> dict[str, dict[tuple[int, int], "Invoice"]]:
         if self._invoices is None:
             raise ContractUpdateRequiredException(self)
 
         return self._invoices
 
     @property
-    def last_invoices_by_groups(self) -> Dict[str, "Invoice"]:
+    def last_invoices_by_groups(self) -> dict[str, "Invoice"]:
         all_invoices = self.all_invoices_by_groups
         group_count = sum(
             [bool(group_invoices) for group_invoices in all_invoices.values()]
@@ -800,15 +796,15 @@ class Contract:
         return last_invoices
 
     @property
-    def invoices_gas(self) -> Dict[Tuple[int, int], "Invoice"]:
+    def invoices_gas(self) -> dict[tuple[int, int], "Invoice"]:
         return self.all_invoices_by_groups[INVOICE_GROUP_GAS]
 
     @property
-    def invoices_tech(self) -> Dict[Tuple[int, int], "Invoice"]:
+    def invoices_tech(self) -> dict[tuple[int, int], "Invoice"]:
         return self.all_invoices_by_groups[INVOICE_GROUP_TECH]
 
     @property
-    def invoices_vdgo(self) -> Dict[Tuple[int, int], "Invoice"]:
+    def invoices_vdgo(self) -> dict[tuple[int, int], "Invoice"]:
         return self.all_invoices_by_groups[INVOICE_GROUP_VDGO]
 
     @property
@@ -819,7 +815,7 @@ class Contract:
         )
 
     @property
-    def devices_data(self) -> List[Dict[str, Any]]:
+    def devices_data(self) -> list[dict[str, Any]]:
         return self._property_data["contractData"]["Devices"]
 
     @property
@@ -850,7 +846,7 @@ class Device:
         self._data = data
 
     def __str__(self):
-        return "Device[%s]" % self.device_id
+        return f"Device[{self.device_id}]"
 
     def __repr__(self):
         return "<" + self.__str__() + ">"
@@ -908,11 +904,11 @@ class Meter(Device):
         return date.fromisoformat(self.data["DateNextCheck"])
 
     @property
-    def history(self) -> Optional[Dict[Tuple[int, int, int], "HistoryEntry"]]:
+    def history(self) -> Optional[dict[tuple[int, int, int], "HistoryEntry"]]:
         return self._history
 
     @history.setter
-    def history(self, value: List[Dict[str, Union[str, Dict[str, int]]]]) -> None:
+    def history(self, value: list[dict[str, Union[str, dict[str, int]]]]) -> None:
         if self._history is None:
             self._history = {}
 
@@ -999,12 +995,12 @@ class Invoice:
         contract: Contract,
         group: str,
         data: InvoiceDataType,
-        period: Tuple[int, int],
+        period: tuple[int, int],
     ):
         self._contract = contract
         self._group = group
         self._period = date(*period, 1)
-        self._payments: Optional[List[Payment]] = []
+        self._payments: Optional[list[Payment]] = []
         self.data = data
 
     @property
@@ -1046,7 +1042,7 @@ class Invoice:
         return round(float(self._data.get("paid") or 0.0), 2)
 
     @property
-    def payments(self) -> List["Payment"]:
+    def payments(self) -> list["Payment"]:
         """List of payments"""
         return self._payments
 
@@ -1070,7 +1066,7 @@ class Payment:
     """Payment class"""
 
     # @TODO: add more properties
-    def __init__(self, data: Dict[str, Any]):
+    def __init__(self, data: dict[str, Any]):
         self._data = data
 
     @property
@@ -1082,7 +1078,7 @@ class MosoblgazException(Exception):
     prefix = "Mosoblgaz API error"
 
     def __init__(self, reason):
-        super(MosoblgazException, self).__init__(self.prefix + ": %s" % reason)
+        super(MosoblgazException, self).__init__(f"{self.prefix}: {reason}")
 
 
 class RequestFailedException(MosoblgazException):

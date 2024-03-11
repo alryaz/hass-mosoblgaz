@@ -1,4 +1,5 @@
 """Constants for Mosoblgaz module"""
+
 from typing import Final
 
 CONF_CONTRACTS: Final = "contracts"
