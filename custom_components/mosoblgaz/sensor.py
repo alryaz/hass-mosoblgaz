@@ -433,7 +433,7 @@ async def async_setup_entry(
 
     log_prefix = f"(user|{get_print_username(hass, config_entry)})"
 
-    _LOGGER.debug(log_prefix + f'Setting up entry "{config_entry.entry_id}"')
+    _LOGGER.debug(f'{log_prefix} Setting up entry "{config_entry.entry_id}"')
 
     update_call = partial(async_account_updater, hass, config_entry, async_add_devices)
 
@@ -446,8 +446,8 @@ async def async_setup_entry(
 
         if result == 0:
             _LOGGER.warning(
-                log_prefix
-                + "No contracts or meters discovered, check your configuration"
+                f"{log_prefix} No contracts or meters discovered, "
+                f"check your configuration"
             )
             return True
 
