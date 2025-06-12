@@ -15,7 +15,7 @@ __all__ = [
 
 import logging
 from datetime import timedelta
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, Mapping, Optional, Union
 
 import aiohttp
 import homeassistant.helpers.config_validation as cv
@@ -29,14 +29,12 @@ from homeassistant.const import (
     CONF_TIMEOUT,
     CONF_USERNAME,
 )
-from homeassistant.core import callback
+from homeassistant.core import callback, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers.typing import ConfigType, HomeAssistantType
+from homeassistant.helpers.typing import ConfigType
 
 from .api import (
     AuthenticationFailedException,
-    MOSCOW_TIMEZONE,
-    MosoblgazAPI,
     PartialOfflineException,
 )
 from .const import *
@@ -54,19 +52,21 @@ def privacy_formatter(value: Any, max_length: int = 3) -> str:
 
 
 def is_privacy_logging_enabled(
-    hass: HomeAssistantType, config: Union[ConfigEntry, Mapping[str, Any]]
+    hass: HomeAssistant, config: Union[ConfigEntry, Mapping[str, Any]]
 ) -> bool:
     if isinstance(config, ConfigEntry):
         if config.source == SOURCE_IMPORT:
-            config = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
+            config_data = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
         else:
-            config = config.options
+            config_data = config.options
+    else:
+        config_data = config
 
-    return config.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
+    return config_data.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING)
 
 
 def get_print_username(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config: Union[ConfigEntry, Mapping[str, Any]],
     privacy_logging: Optional[bool] = None,
 ) -> str:
@@ -172,7 +172,7 @@ CONFIG_SCHEMA = vol.Schema(
 
 @callback
 def _find_existing_entry(
-    hass: HomeAssistantType, username: str
+    hass: HomeAssistant, username: str
 ) -> Optional[config_entries.ConfigEntry]:
     existing_entries = hass.config_entries.async_entries(DOMAIN)
     for config_entry in existing_entries:
@@ -180,7 +180,7 @@ def _find_existing_entry(
             return config_entry
 
 
-async def async_setup(hass: HomeAssistantType, config: ConfigType):
+async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Set up the Mosoblgaz component."""
     domain_config = config.get(DOMAIN)
 
@@ -229,7 +229,7 @@ async def async_setup(hass: HomeAssistantType, config: ConfigType):
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ):
     """Configuration entry setup procedure"""
     user_cfg = config_entry.data
@@ -306,9 +306,7 @@ async def async_setup_entry(
 
     hass.data.setdefault(DATA_API_OBJECTS, {})[config_entry.entry_id] = api_object
 
-    hass.async_create_task(
-        hass.config_entries.async_forward_entry_setup(config_entry, SENSOR_DOMAIN)
-    )
+    await hass.config_entries.async_forward_entry_setups(config_entry, SENSOR_DOMAIN)
 
     _LOGGER.debug(f"{log_prefix} Attaching options update listener")
     options_listener = config_entry.add_update_listener(async_update_options)
@@ -322,7 +320,7 @@ async def async_setup_entry(
 
 
 async def async_update_options(
-    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ):
     """React to options update"""
     log_prefix = f"(user|{get_print_username(hass, config_entry)})"
@@ -331,7 +329,7 @@ async def async_update_options(
 
 
 async def async_unload_entry(
-    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ) -> bool:
     entry_id = config_entry.entry_id
     user_cfg = config_entry.data
@@ -389,7 +387,7 @@ async def async_unload_entry(
 
 
 async def async_migrate_entry(
-    hass: HomeAssistantType, config_entry: config_entries.ConfigEntry
+    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ) -> bool:
     current_version = config_entry.version
     update_args = {}

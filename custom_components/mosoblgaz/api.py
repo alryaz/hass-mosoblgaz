@@ -4,7 +4,7 @@ import logging
 import re
 from datetime import date, datetime
 from types import MappingProxyType
-from typing import Any, Dict, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Mapping, Optional, Union
 
 import aiohttp
 from dateutil.tz import gettz
