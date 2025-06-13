@@ -412,7 +412,7 @@ async def async_account_updater(
 
 
 async def async_setup_entry(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config_entry: config_entries.ConfigEntry,
     async_add_devices: Callable[[Iterable[Entity]], Any],
 ):
@@ -493,7 +493,7 @@ async def async_setup_entry(
 
 # noinspection PyUnusedLocal
 async def async_setup_platform(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config: ConfigType,
     async_add_entities: Callable[[Iterable[Entity]], Any],
     discovery_info=None,
