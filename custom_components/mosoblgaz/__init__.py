@@ -306,7 +306,7 @@ async def async_setup_entry(
 
     hass.data.setdefault(DATA_API_OBJECTS, {})[config_entry.entry_id] = api_object
 
-    await hass.config_entries.async_forward_entry_setups(config_entry, SENSOR_DOMAIN)
+    await hass.config_entries.async_forward_entry_setups(config_entry, [SENSOR_DOMAIN])
 
     _LOGGER.debug(f"{log_prefix} Attaching options update listener")
     options_listener = config_entry.add_update_listener(async_update_options)
