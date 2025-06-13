@@ -1,17 +1,19 @@
+"""Simplistic implementation of interaction with Mosoblgaz API"""
+
 import asyncio
 import json
 import logging
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import MappingProxyType
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Mapping, NamedTuple
 
 import aiohttp
 from dateutil.tz import gettz
 
 _LOGGER = logging.getLogger(__name__)
 
-HistoryEntryDataType = dict[str, Union[str, dict[str, int]]]
+HistoryEntryDataType = dict[str, str | dict[str, int]]
 DeviceDataType = dict[str, Any]
 InvoiceDataType = Mapping[str, Any]
 
@@ -21,7 +23,7 @@ INVOICE_GROUP_TECH = "tech"
 INVOICE_GROUPS = (INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH)
 
 
-def convert_date_dict(date_dict: dict[str, Union[str, int]]) -> datetime:
+def convert_date_dict(date_dict: dict[str, str | int]) -> datetime:
     return datetime.fromisoformat(date_dict["date"]).replace(
         tzinfo=gettz(date_dict["timezone"])
     )
@@ -31,8 +33,8 @@ MOSCOW_TIMEZONE = gettz("Europe/Moscow")
 
 
 def today_blackout(
-    check: Optional[datetime] = None,
-) -> Union[tuple[datetime, datetime], bool]:
+    check: datetime | None = None,
+) -> tuple[datetime, datetime] | bool:
     today = datetime.now(tz=MOSCOW_TIMEZONE)
     blackout_start = today.replace(hour=5, minute=30, second=0)
     blackout_end = today.replace(hour=6, minute=0, second=0)
@@ -95,7 +97,7 @@ class Queries:
         return buffer
 
     @classmethod
-    def query(cls, template: str, use_name: Union[bool, str] = True) -> str:
+    def query(cls, template: str, use_name: bool | str = True) -> str:
         if not hasattr(cls, template):
             raise ValueError('%s does not have "%s" query' % cls.__name__)
 
@@ -242,6 +244,12 @@ class Queries:
     )
 
 
+class CaptchaResponse(NamedTuple):
+    token: str
+    file_url: str
+    valid_until: datetime
+
+
 class MosoblgazAPI:
     BASE_URL = "https://lkk.mosoblgaz.ru"
     AUTH_URL = BASE_URL + "/auth/login"
@@ -252,13 +260,14 @@ class MosoblgazAPI:
         self,
         username: str,
         password: str,
-        session: Optional[aiohttp.ClientSession] = None,
+        session: aiohttp.ClientSession | None = None,
         x_system_auth_token: str | None = None,
         site_key: str | None = None,
+        graphql_token: str | None = None,
     ):
-        self.__username = username
-        self.__password = password
-        self.__graphql_token = None
+        self.username = username
+        self.password = password
+        self.graphql_token = graphql_token
 
         self._site_key = site_key
 
@@ -269,7 +278,7 @@ class MosoblgazAPI:
 
     @property
     def is_logged_in(self):
-        return self.__graphql_token is not None
+        return self.graphql_token is not None
 
     async def fetch_csrf_token(self):
         fetch_url = self.AUTH_URL
@@ -358,7 +367,29 @@ class MosoblgazAPI:
 
         return x_system_auth_token
 
-    async def fetch_temporary_token(self, action: str) -> str | None:
+    async def solve_captcha(self, captcha: CaptchaResponse, result: str) -> str:
+        if not result:
+            raise AuthenticationFailedException("captcha response cannot be empty")
+        async with self._session.put(
+            self.CAPTCHA_URL + "/api/captchas/" + captcha.token,
+            json={"inputValue": result},
+            headers={"Site-Key": self._site_key} if self._site_key else {},
+        ) as response:
+            data = await response.json()
+
+        _LOGGER.debug("Captcha solution response: %s", data)
+
+        # Process expected captcha response
+        try:
+            captcha_token = data["captchaToken"]
+        except KeyError:
+            raise AuthenticationFailedException("could not solve captcha")
+        if not captcha:
+            raise AuthenticationFailedException("captcha token response is empty")
+        return captcha_token
+
+    async def fetch_temporary_token(self, action: str) -> CaptchaResponse | str:
+        """Retrieve temporary token or captcha token"""
         if not self._site_key:
             _LOGGER.info(f"Attempting to make request without site key")
 
@@ -371,16 +402,46 @@ class MosoblgazAPI:
             headers={"Site-Key": self._site_key} if self._site_key else {},
         ) as response:
             data = await response.json()
+            print(data)
+
+        # Process possible captcha response
         if data.get("showCaptcha"):
-            # @TODO: support captcha retrieval
-            raise AuthenticationFailedException("captcha required (not supported)")
-        if temporary_token := data.get("temporaryToken"):
-            _LOGGER.debug(f"Fetched temporary token: {temporary_token}")
-        else:
-            _LOGGER.debug(f"Temporary token not provided in: {data}")
+            try:
+                valid_until = datetime.fromisoformat(data["validUntil"])
+            except (ValueError, TypeError, KeyError):
+                _LOGGER.error(
+                    "Could not parse the valid_until parameter of the captcha response, assuming T+1H"
+                )
+                valid_until = datetime.now() + timedelta(hours=1)
+            try:
+                return CaptchaResponse(
+                    token=data["captchaToken"],
+                    file_url=data["fileUrl"],
+                    valid_until=valid_until,
+                )
+            except KeyError:
+                _LOGGER.debug("Captcha response: %s", data)
+                raise AuthenticationFailedException(
+                    "captcha required, but response is unexpected"
+                )
+
+        # Process possible temporary token response
+        try:
+            temporary_token = data["temporaryToken"]
+        except KeyError:
+            raise AuthenticationFailedException("temporary token not found")
+        if not temporary_token:
+            raise AuthenticationFailedException("temporary token is empty")
         return temporary_token
 
-    async def authenticate(self, captcha_result: str | None = None):
+    async def authenticate(
+        self,
+        temporary_token: str | CaptchaResponse | None = None,
+        captcha_result: str = "",
+    ) -> str:
+        """Perform authentication.
+
+        Captcha argument contains: [token, response]."""
         csrf_token, x_system_auth_token = await asyncio.gather(
             self.fetch_csrf_token(),
             self.fetch_x_system_auth_token(),
@@ -389,16 +450,19 @@ class MosoblgazAPI:
         self._x_system_auth_token = x_system_auth_token
 
         try:
+            if temporary_token is None:
+                temporary_token = await self.fetch_temporary_token("login")
+            if not isinstance(temporary_token, str):
+                raise CaptchaRequiredException(temporary_token)
+
             auth_request_data = {
-                "mog_login[username]": self.__username,
-                "mog_login[password]": self.__password,
-                "mog_login[captcha]": captcha_result or "",
+                "mog_login[username]": self.username,
+                "mog_login[password]": self.password,
+                "mog_login[captcha]": captcha_result,
+                "mog-captcha-response": temporary_token,
                 "_csrf_token": csrf_token,
                 "_remember_me": "on",
             }
-
-            if temporary_token := await self.fetch_temporary_token("login"):
-                auth_request_data["mog-captcha-response"] = temporary_token
 
             async with self._session.post(
                 self.AUTH_URL, data=auth_request_data
@@ -411,7 +475,7 @@ class MosoblgazAPI:
                         f"Error status ({response.status})"
                     )
 
-                _LOGGER.debug(f"Authentication on account {self.__username} successful")
+                _LOGGER.debug(f"Authentication on account {self.username} successful")
 
             async with self._session.head(self.BASE_URL + "/lkk3/") as response:
                 graphql_token = response.headers.get("Token")
@@ -424,7 +488,7 @@ class MosoblgazAPI:
 
                 _LOGGER.debug(f"GraphQL token: {graphql_token}")
 
-                self.__graphql_token = graphql_token
+                self.graphql_token = graphql_token
 
         except asyncio.TimeoutError:
             _LOGGER.error("Timeout executing authentication request")
@@ -432,19 +496,20 @@ class MosoblgazAPI:
                 "Timeout executing authentication request"
             )
 
+        return graphql_token
+
     async def perform_single_query(
-        self, query: str, variables: Optional[dict[str, Any]] = None
+        self, query: str, variables: dict[str, Any] | None = None
     ):
         return (await self.perform_queries([(query, variables)]))[0]
 
     async def perform_queries(
-        self, queries: list[Union[str, tuple[str, Optional[dict[str, Any]]]]]
+        self, queries: list[str | tuple[str, dict[str, Any] | None]]
     ) -> list[dict[str, Any]]:
         """Perform multiple queries at once."""
-        if not self.is_logged_in:
-            raise AuthenticationFailedException(
-                "Authentication required prior to making batch requests"
-            )
+        graphql_token = self.graphql_token
+        if graphql_token is None:
+            raise AuthenticationFailedException("GraphQL token required")
 
         payload = []
         for query_variables in queries:
@@ -478,7 +543,7 @@ class MosoblgazAPI:
             async with self._session.post(
                 self.BATCH_URL,
                 json=payload,
-                headers={"token": self.__graphql_token},
+                headers={"token": graphql_token},
             ) as response:
                 try:
                     listed_data = list(map(lambda x: x["data"], await response.json()))
@@ -505,13 +570,13 @@ class MosoblgazAPI:
 
     @staticmethod
     def check_statuses_response(
-        statuses_response: dict[str, Union[bool, str]],
+        statuses_response: dict[str, bool | str],
         raise_for_statuses: bool = True,
-        check_keys: Optional[dict[str, Union[bool, str]]] = None,
+        check_keys: dict[str, bool | str] | None = None,
         with_default: bool = True,
     ):
         if "internalSystemStatuses" in statuses_response:
-            statuses_response = statuses_response["internalSystemStatuses"]
+            statuses_response = statuses_response["internalSystemStatuses"] # type: ignore
 
         statuses_keys = (
             {
@@ -595,12 +660,15 @@ class MosoblgazAPI:
         self,
         contract_id: str,
         meter_id: str,
-        value: Union[int, float],
-        date_: Optional[Union[datetime, date]] = None,
+        value: int | float,
+        date_: datetime | date | None = None,
     ):
         x_system_auth_token = self._x_system_auth_token
         if x_system_auth_token is None:
             raise AuthenticationFailedException("X-SYSTEM-AUTH token required")
+        graphql_token = self.graphql_token
+        if graphql_token is None:
+            raise AuthenticationFailedException("GraphQL token required")
 
         if date_ is None:
             date_ = date.today()
@@ -618,7 +686,7 @@ class MosoblgazAPI:
             },
             headers={
                 "X-SYSTEM-AUTH": x_system_auth_token,
-                "token": self.__graphql_token,
+                "token": graphql_token,
             },
             allow_redirects=False,
         ) as response:
@@ -638,15 +706,15 @@ class Contract:
         self,
         api: MosoblgazAPI,
         contract_id: str,
-        device_ids: Optional[set[str]] = None,
+        device_ids: set[str] | None = None,
     ):
         self.api = api
 
         self._contract_id = contract_id
-        self._devices: dict[str, Optional[Device]] = (
+        self._devices: dict[str, Device | None] = (
             {} if device_ids is None else dict.fromkeys(device_ids, None)
         )
-        self._invoices: Optional[dict[str, dict[tuple[int, int], Invoice]]] = None
+        self._invoices: dict[str, dict[tuple[int, int], Invoice]] | None = None
 
         self._data = None
 
@@ -671,14 +739,14 @@ class Contract:
 
             is_meter = device_data["ClassCode"] in ClassCodes.METERS
 
-            if self._devices.get(device_id) is None:
+            device = self._devices.get(device_id)
+            if device is None:
                 factory = Meter if is_meter else Device
                 device = factory(self, device_data)
             else:
-                device = self._devices[device_id]
                 device.data = device_data
 
-            if is_meter:
+            if is_meter and isinstance(device, Meter):
                 for history_pair in self.history_data:
                     if history_pair["info"]["ID"] == device.device_id:
                         device.history = history_pair["values"]
@@ -834,8 +902,8 @@ class Contract:
     async def push_indication(
         self,
         meter_id: str,
-        value: Union[int, float],
-        date_: Optional[Union[datetime, date]] = None,
+        value: int | float,
+        date_: datetime | date | None = None,
     ):
         return await self.api.push_indication(self.contract_id, meter_id, value, date_)
 
@@ -904,11 +972,11 @@ class Meter(Device):
         return date.fromisoformat(self.data["DateNextCheck"])
 
     @property
-    def history(self) -> Optional[dict[tuple[int, int, int], "HistoryEntry"]]:
+    def history(self) -> dict[tuple[int, int, int], "HistoryEntry"] | None:
         return self._history
 
     @history.setter
-    def history(self, value: list[dict[str, Union[str, dict[str, int]]]]) -> None:
+    def history(self, value: list[dict[str, str | dict[str, int]]]) -> None:
         if self._history is None:
             self._history = {}
 
@@ -928,14 +996,14 @@ class Meter(Device):
         self._last_history_period = last_history_period
 
     @property
-    def last_history_entry(self) -> Optional["HistoryEntry"]:
+    def last_history_entry(self) -> "HistoryEntry | None":
         if self._history is not None:
             return self.history[self._last_history_period]
 
     async def push_indication(
         self,
-        value: Union[int, float],
-        date_: Optional[Union[datetime, date]] = None,
+        value: int | float,
+        date_: datetime | date | None = None,
         ignore_values: bool = False,
     ):
         if not ignore_values:
@@ -973,16 +1041,16 @@ class HistoryEntry:
     @property
     def delta(self) -> int:
         if "M3" in self._data:
-            return int(self._data.get("M3", 0))
+            return int(self._data.get("M3") or 0)
         return self.value - self.previous_value
 
     @property
     def previous_value(self) -> int:
-        return int(self._data.get("prevV", 0))
+        return int(self._data.get("prevV") or 0)
 
     @property
     def value(self) -> int:
-        return int(self._data.get("V", 0))
+        return int(self._data.get("V") or 0)
 
     @property
     def charged(self) -> float:
@@ -1000,7 +1068,7 @@ class Invoice:
         self._contract = contract
         self._group = group
         self._period = date(*period, 1)
-        self._payments: Optional[list[Payment]] = []
+        self._payments: list[Payment] = []
         self.data = data
 
     @property
@@ -1037,7 +1105,7 @@ class Invoice:
         return round(float(self._data.get("balance") or 0.0), 2)
 
     @property
-    def paid(self) -> Optional[float]:
+    def paid(self) -> float:
         """Paid amount (if available)"""
         return round(float(self._data.get("paid") or 0.0), 2)
 
@@ -1057,7 +1125,7 @@ class Invoice:
         return self._period
 
     @property
-    def total(self) -> Optional[float]:
+    def total(self) -> float:
         """Invoice total"""
         return round(float(self._data.get("invoice") or 0.0), 2)
 
@@ -1084,6 +1152,14 @@ class RequestFailedException(MosoblgazException):
 
 class AuthenticationFailedException(MosoblgazException):
     """Failed to authenticate"""
+
+
+class CaptchaRequiredException(AuthenticationFailedException):
+    """Captcha is required for authentication"""
+
+    def __init__(self, captcha: CaptchaResponse) -> None:
+        self.captcha = captcha
+        super().__init__(captcha)
 
 
 class QueryFailedException(RequestFailedException):
