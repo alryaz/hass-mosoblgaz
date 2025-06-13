@@ -124,6 +124,8 @@ def get_should_add_entities(
     return default_add_contracts, default_add_meters, default_add_invoices
 
 
+class MosoblgazUpdateCoordinator(DataUpdateCoordinator)
+
 async def async_account_updater(
     hass: HomeAssistant,
     config_entry: config_entries.ConfigEntry,
