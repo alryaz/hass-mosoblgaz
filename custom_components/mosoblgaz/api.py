@@ -1075,31 +1075,28 @@ class Payment:
 
 
 class MosoblgazException(Exception):
-    prefix = "Mosoblgaz API error"
-
-    def __init__(self, reason):
-        super(MosoblgazException, self).__init__(f"{self.prefix}: {reason}")
+    """Mosoblgaz API error"""
 
 
 class RequestFailedException(MosoblgazException):
-    prefix = "Request failed"
+    """Request failed"""
 
 
 class AuthenticationFailedException(MosoblgazException):
-    prefix = "Failed to authenticate"
+    """Failed to authenticate"""
 
 
 class QueryFailedException(RequestFailedException):
-    prefix = "Query request failed"
+    """Query request failed"""
 
 
 class QueryNotFoundException(MosoblgazException):
-    prefix = "Query not found"
+    """Query not found"""
 
 
 class ContractUpdateRequiredException(MosoblgazException):
-    prefix = "Contract requires data update"
+    """Contract requires data update"""
 
 
 class PartialOfflineException(MosoblgazException):
-    prefix = "Service reported partial offline status"
+    """Service reported partial offline status"""
