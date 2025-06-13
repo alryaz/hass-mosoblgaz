@@ -5,8 +5,8 @@ import aiohttp
 import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
-    ConfigFlowResult,
     ConfigFlow,
+    ConfigFlowResult,
     OptionsFlow,
     SOURCE_IMPORT,
     CONN_CLASS_CLOUD_POLL,
@@ -48,7 +48,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
     VERSION = 2
     CONNECTION_CLASS = CONN_CLASS_CLOUD_POLL
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Instantiate config flow."""
         self._contracts = None
         self._last_contract_id = None
@@ -58,7 +58,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 
         self.schema_user = vol.Schema(OrderedDict())
 
-    async def _check_entry_exists(self, username: str):
+    async def _check_entry_exists(self, username: str) -> bool:
         current_entries = self._async_current_entries()
 
         for config_entry in current_entries:
@@ -68,7 +68,9 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         return False
 
     # Initial step for user interaction
-    async def async_step_user(self, user_input: Optional[dict[str, Any]] = None):
+    async def async_step_user(
+        self, user_input: Optional[dict[str, Any]] = None
+    ) -> ConfigFlowResult:
         """Handle a flow start."""
         if user_input is None:
             return self.async_show_form(
@@ -129,7 +131,9 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 
         return self.async_create_entry(title="User: " + username, data=user_input)
 
-    async def async_step_import(self, user_input=None):
+    async def async_step_import(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
         """
         Handler for imported configurations (from YAML).
         :param user_input: YAML configuration (at least username required)
@@ -149,7 +153,9 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     @callback
-    def async_get_options_flow(config_entry):
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> "MosoblgazOptionsFlowHandler":
         """Mosoblgaz options callback."""
         return MosoblgazOptionsFlowHandler(config_entry)
 
@@ -157,32 +163,35 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 class MosoblgazOptionsFlowHandler(OptionsFlow):
     """Mosoblgaz options flow handler"""
 
-    def __init__(self, config_entry: ConfigEntry):
-        """Initialize Mosoblgaz options flow handler"""
+    def __init__(self, config_entry: ConfigEntry) -> None:
+        super().__init__()
         self.config_entry = config_entry
-        username = config_entry.data[CONF_USERNAME]
-        options_source = (
-            config_entry.data
-            if config_entry.source == SOURCE_IMPORT
-            else config_entry.options
-        )
-        if options_source.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
-            print_username = privacy_formatter(username)
-        else:
-            print_username = username
-        self.log_prefix = f"(user|{print_username})"
 
-    async def async_step_init(self, user_input=None):
+    async def async_step_init(self, user_input: dict[str, Any] | None = None):
         """
         Options flow entry point.
         :param user_input: User input mapping
         :return: Flow response
         """
-        if self.config_entry.source == SOURCE_IMPORT:
-            return await self.async_step_import(user_input=user_input)
-        return await self.async_step_user(user_input=user_input)
 
-    async def async_step_import(self, user_input=None):
+        # Choose how to handle based on config source
+        if self.config_entry.source == SOURCE_IMPORT:
+            options_source = self.config_entry.data
+            coro = self.async_step_import(user_input=user_input)
+        else:
+            options_source = self.config_entry.options
+            coro = self.async_step_user(user_input=user_input)
+
+        # Setup logging prefix
+        username = self.config_entry.data[CONF_USERNAME]
+        if options_source.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
+            username = privacy_formatter(username)
+        self.log_prefix = f"(user|{username})"
+
+        # Execute unawaited coroutine
+        return await coro
+
+    async def async_step_import(self, user_input: dict[str, Any] | None = None):
         """
         Callback for entries imported from YAML.
         :param user_input: User input mapping
@@ -193,7 +202,7 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
         )
         return self.async_show_form(step_id="import")
 
-    async def async_step_user(self, user_input=None):
+    async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """
         Callback for entries created via "Integrations" UI.
         :param user_input: User input mapping
