@@ -32,10 +32,11 @@ from homeassistant.const import (
     CONF_USERNAME,
     UnitOfVolume,
 )
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.event import async_track_time_interval
-from homeassistant.helpers.typing import ConfigType, HomeAssistantType
+from homeassistant.helpers.typing import ConfigType
 
 from . import get_print_username, is_privacy_logging_enabled, privacy_formatter
 from .api import (
@@ -124,7 +125,7 @@ def get_should_add_entities(
 
 
 async def async_account_updater(
-    hass: HomeAssistantType,
+    hass: HomeAssistant,
     config_entry: config_entries.ConfigEntry,
     async_add_entities: Callable[[Iterable[Entity]], Any],
     now: Optional[datetime] = None,

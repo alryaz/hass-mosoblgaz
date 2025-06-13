@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional
+from typing import Any, Final, Optional
 
 import aiohttp
 import voluptuous as vol
@@ -32,8 +32,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-CONF_ENABLE_CONTRACT = "enable_contract"
-CONF_ADD_ALL_CONTRACTS = "add_all_contracts"
+CONF_ENABLE_CONTRACT: Final = "enable_contract"
+CONF_ADD_ALL_CONTRACTS: Final = "add_all_contracts"
 
 
 class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
