@@ -3,8 +3,14 @@ from typing import Any, Final, Optional
 
 import aiohttp
 import voluptuous as vol
-from homeassistant import config_entries
-from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlowResult,
+    ConfigFlow,
+    OptionsFlow,
+    SOURCE_IMPORT,
+    CONN_CLASS_CLOUD_POLL,
+)
 from homeassistant.const import (
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
@@ -36,11 +42,11 @@ CONF_ENABLE_CONTRACT: Final = "enable_contract"
 CONF_ADD_ALL_CONTRACTS: Final = "add_all_contracts"
 
 
-class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
+class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mosoblgaz config entries."""
 
     VERSION = 2
-    CONNECTION_CLASS = config_entries.CONN_CLASS_CLOUD_POLL
+    CONNECTION_CLASS = CONN_CLASS_CLOUD_POLL
 
     def __init__(self):
         """Instantiate config flow."""
@@ -78,7 +84,7 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         username = user_input[CONF_USERNAME]
 
         if await self._check_entry_exists(username):
-            return self.async_abort("already_exists")
+            return self.async_abort(reason="already_exists")
 
         from .api import MosoblgazAPI
 
@@ -95,7 +101,7 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
                 contracts = await api.fetch_contracts(with_data=False)
 
                 if not contracts:
-                    return self.async_abort("contracts_missing")
+                    return self.async_abort(reason="contracts_missing")
 
         except AuthenticationFailedException as exc:
             _LOGGER.error(f"Error during authentication flow: {exc}", exc_info=exc)
@@ -116,10 +122,10 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         except PartialOfflineException:
-            return self.async_abort("partial_offline")
+            return self.async_abort(reason="partial_offline")
 
         except MosoblgazException:
-            return self.async_abort("api_error")
+            return self.async_abort(reason="api_error")
 
         return self.async_create_entry(title="User: " + username, data=user_input)
 
@@ -130,12 +136,12 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         :return: Entry creation command
         """
         if user_input is None:
-            return self.async_abort("unknown_error")
+            return self.async_abort(reason="unknown_error")
 
         username = user_input[CONF_USERNAME]
 
         if await self._check_entry_exists(username):
-            return self.async_abort("already_exists")
+            return self.async_abort(reason="already_exists")
 
         return self.async_create_entry(
             title="User: " + username, data={CONF_USERNAME: username}
@@ -148,7 +154,7 @@ class MosoblgazFlowHandler(config_entries.ConfigFlow, domain=DOMAIN):
         return MosoblgazOptionsFlowHandler(config_entry)
 
 
-class MosoblgazOptionsFlowHandler(config_entries.OptionsFlow):
+class MosoblgazOptionsFlowHandler(OptionsFlow):
     """Mosoblgaz options flow handler"""
 
     def __init__(self, config_entry: ConfigEntry):
