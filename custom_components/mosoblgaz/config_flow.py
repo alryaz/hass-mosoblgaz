@@ -1,10 +1,8 @@
 from base64 import b64encode
 import logging
-from typing import Any, Final, Mapping, Optional
+from typing import Any, Final, Mapping
 
-import aiohttp
 from homeassistant.helpers.aiohttp_client import (
-    async_create_clientsession,
     async_get_clientsession,
 )
 import voluptuous as vol
@@ -25,7 +23,6 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from custom_components.mosoblgaz import api
 from custom_components.mosoblgaz.api import (
     AuthenticationFailedException,
     CaptchaResponse,

@@ -15,18 +15,17 @@ __all__ = [
 
 import asyncio
 import logging
-from datetime import timedelta
-from typing import Any, Awaitable, Mapping, MutableMapping, final
 import voluptuous as vol
+from datetime import timedelta
+from typing import Any, Awaitable, Mapping, MutableMapping, Sequence, TypeVar, final
 
+from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
 from homeassistant.helpers import entity_registry
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
     DataUpdateCoordinator,
 )
-from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT, current_entry
 from homeassistant.const import (
     CONF_PASSWORD,
@@ -34,9 +33,11 @@ from homeassistant.const import (
     CONF_TIMEOUT,
     CONF_USERNAME,
 )
-from homeassistant.core import callback, HomeAssistant
+from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
+
+import homeassistant.helpers.config_validation as cv
 
 
 from custom_components.mosoblgaz.api import (
@@ -51,54 +52,10 @@ from custom_components.mosoblgaz.const import *
 
 _LOGGER = logging.getLogger(__name__)
 
-
-AUTHENTICATION_SUBCONFIG = {
-    vol.Required(CONF_USERNAME): cv.string,
-    vol.Required(CONF_PASSWORD): cv.string,
-}
-
-NAME_FORMATS_SUBCONFIG = {
-    vol.Optional(CONF_METER_NAME, default=DEFAULT_METER_NAME_FORMAT): cv.string,
-    vol.Optional(CONF_INVOICE_NAME, default=DEFAULT_INVOICE_NAME_FORMAT): cv.string,
-    vol.Optional(CONF_CONTRACT_NAME, default=DEFAULT_CONTRACT_NAME_FORMAT): cv.string,
-}
-
-DEFAULT_FILTER_SUBCONFIG = {
-    vol.Optional(CONF_INVOICES, default=DEFAULT_ADD_INVOICES): cv.boolean,
-    vol.Optional(CONF_METERS, default=DEFAULT_ADD_METERS): cv.boolean,
-    vol.Optional(CONF_CONTRACTS, default=DEFAULT_ADD_CONTRACTS): cv.boolean,
-}
-
-FILTER_SUBCONFIG = {
-    **DEFAULT_FILTER_SUBCONFIG,
-    vol.Optional(CONF_CONTRACTS): vol.Any(
-        cv.boolean,
-        {
-            cv.string: vol.Any(
-                vol.Optional(cv.boolean, default=DEFAULT_ADD_CONTRACTS),
-                vol.Schema(DEFAULT_FILTER_SUBCONFIG),
-            ),
-        },
-    ),
-}
-
-OPTIONS_SUBCONFIG = {
-    vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
-}
-
-INTERVALS_SUBCONFIG = {
-    vol.Optional(
-        CONF_SCAN_INTERVAL, default=timedelta(seconds=DEFAULT_SCAN_INTERVAL)
-    ): cv.positive_time_period,
-    vol.Optional(
-        CONF_TIMEOUT, default=timedelta(seconds=DEFAULT_TIMEOUT)
-    ): cv.positive_time_period,
-}
+_TConfigsList = TypeVar("_TConfigsList", bound=Sequence[Mapping[str, Any]])
 
 
-def _unique_username_validator(
-    configs: list[Mapping[str, Any]],
-) -> list[Mapping[str, Any]]:
+def _unique_username_validator(configs: _TConfigsList) -> _TConfigsList:
     existing_usernames = set()
     exceptions = []
     for i, config in enumerate(configs):
@@ -120,15 +77,30 @@ CONFIG_SCHEMA = vol.Schema(
         DOMAIN: vol.All(
             cv.ensure_list,
             [
-                vol.Schema(
-                    {
-                        cv.deprecated("privacy_logging"): cv.boolean,
-                        **AUTHENTICATION_SUBCONFIG,
-                        **NAME_FORMATS_SUBCONFIG,
-                        **FILTER_SUBCONFIG,
-                        **OPTIONS_SUBCONFIG,
-                        **INTERVALS_SUBCONFIG,
-                    }
+                vol.All(
+                    cv.removed("meter_name"),
+                    cv.removed("invoice_name"),
+                    cv.removed("meter_name"),
+                    cv.removed("invoices"),
+                    cv.removed("meters"),
+                    cv.removed("contracts"),
+                    cv.removed("privacy_logging"),
+                    vol.Schema(
+                        {
+                            vol.Required(CONF_USERNAME): cv.string,
+                            vol.Required(CONF_PASSWORD): cv.string,
+                            vol.Optional(
+                                CONF_SCAN_INTERVAL,
+                                default=timedelta(seconds=DEFAULT_SCAN_INTERVAL),
+                            ): cv.positive_time_period,
+                            vol.Optional(
+                                CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES
+                            ): cv.boolean,
+                            vol.Optional(
+                                CONF_TIMEOUT, default=DEFAULT_TIMEOUT
+                            ): cv.positive_time_period,
+                        }
+                    ),
                 )
             ],
             _unique_username_validator,
@@ -136,13 +108,6 @@ CONFIG_SCHEMA = vol.Schema(
     },
     extra=vol.ALLOW_EXTRA,
 )
-
-
-async def async_setup(hass: HomeAssistant, config: ConfigType):
-    """Set up the Mosoblgaz component."""
-    hass.data[DOMAIN] = {}
-
-    return True
 
 
 class MosoblgazUpdateCoordinator(DataUpdateCoordinator[dict[str, Contract]]):
@@ -176,7 +141,94 @@ class MosoblgazCoordinatorEntity(CoordinatorEntity[MosoblgazUpdateCoordinator]):
         return self.coordinator.api
 
 
-async def run_with_cnr(coro: Awaitable):
+class ConfigEntryLoggerAdapter(logging.LoggerAdapter):
+    """Logger adapter that prefixes config entry ID."""
+
+    def __init__(
+        self,
+        logger: logging.Logger = _LOGGER,
+        config_entry: ConfigEntry | None = None,
+    ) -> None:
+        if (config_entry or (config_entry := current_entry.get())) is None:
+            raise RuntimeError("no context of config entry")
+        super().__init__(logger, {"config_entry": config_entry})
+        self.config_entry = config_entry
+
+    def process(
+        self, msg: Any, kwargs: MutableMapping[str, Any]
+    ) -> tuple[Any, MutableMapping[str, Any]]:
+        return "[%s] %s" % (self.config_entry.entry_id[-6:], msg), kwargs
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType):
+    """Set up the Mosoblgaz component."""
+    hass.data[DOMAIN] = {}
+
+    if not (domain_config := config.get(DOMAIN)):
+        return True
+
+    async_create_issue(
+        hass,
+        DOMAIN,
+        "deprecated_yaml_configuration",
+        is_fixable=False,
+        issue_domain=DOMAIN,
+        severity=IssueSeverity.WARNING,
+        translation_key="deprecated_yaml_configuration",
+    )
+
+    _LOGGER.warning(
+        (
+            "YAML configuration of %s is deprecated and will be "
+            "removed in the future versions. Your current "
+            "configuration had been migrated to the database. "
+            "Please, remove '%s: ...' from your configuration."
+        ),
+        DOMAIN,
+        DOMAIN,
+    )
+
+    # Iterate over YAML configuration entries
+    for user_cfg in domain_config:
+        username = user_cfg[CONF_USERNAME]
+
+        # Check if an entry with a valid unique ID already exists
+        if hass.config_entries.async_entry_for_domain_unique_id(DOMAIN, username):
+            continue
+
+        # Check against internal database for existing entries
+        for entry in hass.config_entries.async_entries(DOMAIN):
+            if entry.source == SOURCE_IMPORT and entry.data[CONF_USERNAME] == username:
+                break
+        else:
+            continue
+
+        # Check whether the loaded entry contains password within data,
+        # which is an indicator of the entry being updated.
+        if CONF_PASSWORD in entry.data:
+            continue
+
+        # Update entry, import as version 3 initially
+        hass.config_entries.async_update_entry(
+            entry,
+            data={
+                CONF_USERNAME: username,
+                CONF_PASSWORD: user_cfg[CONF_PASSWORD],
+            },
+            options={
+                CONF_INVERT_INVOICES: user_cfg[CONF_INVERT_INVOICES],
+                CONF_SCAN_INTERVAL: user_cfg[CONF_SCAN_INTERVAL],
+                CONF_TIMEOUT: user_cfg[CONF_TIMEOUT],
+            },
+            unique_id=username,
+            version=3,
+        )
+
+    return True
+
+
+async def async_run_with_exceptions(coro: Awaitable):
+    """Execute coroutine with Home Assistant exceptions."""
     try:
         return await coro
     except AuthenticationFailedException as exc:
@@ -187,11 +239,9 @@ async def run_with_cnr(coro: Awaitable):
         raise ConfigEntryNotReady(f"Generic API error: {exc}")
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Configuration entry setup procedure"""
-    user_cfg = entry.data
-
-    if entry.source == config_entries.SOURCE_IMPORT:
+    if entry.source == SOURCE_IMPORT:
         return False
 
     logger = ConfigEntryLoggerAdapter(config_entry=entry)
@@ -207,7 +257,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
     contracts: dict[str, Contract] | None = None
     if api_object.graphql_token:
         try:
-            contracts = await run_with_cnr(api_object.fetch_contracts())
+            contracts = await async_run_with_exceptions(api_object.fetch_contracts())
         except ConfigEntryAuthFailed:
             logger.info("GraphQL token may be obsolete, ignoring")
             api_object.graphql_token = None
@@ -216,8 +266,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
         temporary_token = await api_object.fetch_temporary_token()
         if isinstance(temporary_token, CaptchaResponse):
             raise ConfigEntryAuthFailed("CAPTCHA input required")
-        await run_with_cnr(api_object.authenticate(temporary_token))
-        contracts = await run_with_cnr(api_object.fetch_contracts())
+        await async_run_with_exceptions(api_object.authenticate(temporary_token))
+        contracts = await async_run_with_exceptions(api_object.fetch_contracts())
 
     if entry.data.get(CONF_GRAPHQL_TOKEN) != api_object.graphql_token:
         merge_data = dict(entry.data)
@@ -246,38 +296,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
     return True
 
 
-class ConfigEntryLoggerAdapter(logging.LoggerAdapter):
-    """Logger adapter that prefixes config entry ID."""
-
-    def __init__(
-        self,
-        logger: logging.Logger = _LOGGER,
-        config_entry: ConfigEntry | None = None,
-    ) -> None:
-        if (config_entry or (config_entry := current_entry.get())) is None:
-            raise RuntimeError("no context of config entry")
-        super().__init__(logger, {"config_entry": config_entry})
-        self.config_entry = config_entry
-
-    def process(
-        self, msg: Any, kwargs: MutableMapping[str, Any]
-    ) -> tuple[Any, MutableMapping[str, Any]]:
-        return "[%s] %s" % (self.config_entry.entry_id[-6:], msg), kwargs
-
-
-async def async_update_options(
-    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
-):
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry):
     """React to options update"""
-    ConfigEntryLoggerAdapter(config_entry=config_entry).debug(
-        "Reloading configuration entry"
-    )
-    await hass.config_entries.async_reload(config_entry.entry_id)
+    ConfigEntryLoggerAdapter(config_entry=entry).debug("Reloading configuration entry")
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(
-    hass: HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload Raise3D entry."""
     unload_ok = all(
         await asyncio.gather(
@@ -294,9 +319,7 @@ async def async_unload_entry(
     return True
 
 
-async def async_migrate_entry(
-    hass: HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug(
         f'Migrating entry "{entry.entry_id}" '
         f"(type={entry.source}) "
