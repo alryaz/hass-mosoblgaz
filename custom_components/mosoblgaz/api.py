@@ -273,8 +273,13 @@ class MosoblgazAPI:
 
         self._session = session or aiohttp.ClientSession()
         self._x_system_auth_token: str | None = x_system_auth_token
+        self._last_captcha: CaptchaResponse | None = None
 
         self._contracts: dict[str, Contract] = {}
+
+    @property
+    def last_captcha(self) -> CaptchaResponse | None:
+        return self._last_captcha
 
     @property
     def is_logged_in(self):
@@ -282,17 +287,21 @@ class MosoblgazAPI:
 
     async def fetch_csrf_token(self):
         fetch_url = self.AUTH_URL
+        _LOGGER.debug("Fetching CSRF token")
 
         try:
             async with self._session.get(fetch_url) as request:
                 html = await request.text()
 
                 if m := re.search(
-                    re.escape(self.CAPTCHA_URL + r"/api.js?site-key=") + "([a-f0-9]+)",
+                    re.escape(self.CAPTCHA_URL + "/api.js?site-key=") + r"([a-f0-9]+)",
                     html,
                 ):
+                    _LOGGER.debug("Site key: %s", m.group(1))
                     # Update site key
                     self._site_key = m.group(1)
+                else:
+                    _LOGGER.debug("No site key found on request")
 
                 results = re.search(r'csrf_token"\s+value="([^"]+)', html)
 
@@ -367,7 +376,15 @@ class MosoblgazAPI:
 
         return x_system_auth_token
 
-    async def solve_captcha(self, captcha: CaptchaResponse, result: str) -> str:
+    async def solve_captcha(
+        self, result: str, captcha: CaptchaResponse | None = None
+    ) -> str:
+        if captcha is None:
+            captcha = self._last_captcha
+            if captcha is None:
+                raise AuthenticationFailedException(
+                    "attempting to solve unknown captcha"
+                )
         if not result:
             raise AuthenticationFailedException("captcha response cannot be empty")
         async with self._session.put(
@@ -388,21 +405,45 @@ class MosoblgazAPI:
             raise AuthenticationFailedException("captcha token response is empty")
         return captcha_token
 
-    async def fetch_temporary_token(self, action: str) -> CaptchaResponse | str:
+    async def fetch_temporary_token(
+        self, action: str = "login"
+    ) -> CaptchaResponse | str:
         """Retrieve temporary token or captcha token"""
-        if not self._site_key:
-            _LOGGER.info(f"Attempting to make request without site key")
+        site_key = self._site_key
+        if not site_key:
+            await self.fetch_csrf_token()
+            site_key = self._site_key
+            if not site_key:
+                raise AuthenticationFailedException(
+                    "site key not found for temporary token request"
+                )
 
         _LOGGER.debug(f"Fetching temporary token for action: {action}")
 
-        # Perform POST request for captchas
-        async with self._session.post(
-            self.CAPTCHA_URL + "/api/captchas",
-            json={"action": action},
-            headers={"Site-Key": self._site_key} if self._site_key else {},
-        ) as response:
-            data = await response.json()
-            print(data)
+        data: dict | None = None
+        if self._last_captcha:
+            try:
+                async with self._session.put(
+                    self.CAPTCHA_URL + "/api/captchas/reissue",
+                    data=self._last_captcha.token,
+                    headers={"Site-Key": self._site_key},
+                ) as response:
+                    data = await response.json()
+            except aiohttp.ClientResponseError:
+                _LOGGER.error("Request error on CAPTCHA re-issue")
+                data = None
+            except json.JSONDecodeError:
+                _LOGGER.error("Decoding error on CAPTCHA re-issue")
+                data = None
+
+        if data is None:
+            # Perform POST request for captchas
+            async with self._session.post(
+                self.CAPTCHA_URL + "/api/captchas",
+                json={"action": action},
+                headers={"Site-Key": self._site_key},
+            ) as response:
+                data = await response.json()
 
         # Process possible captcha response
         if data.get("showCaptcha"):
@@ -414,7 +455,7 @@ class MosoblgazAPI:
                 )
                 valid_until = datetime.now() + timedelta(hours=1)
             try:
-                return CaptchaResponse(
+                captcha = CaptchaResponse(
                     token=data["captchaToken"],
                     file_url=data["fileUrl"],
                     valid_until=valid_until,
@@ -424,6 +465,12 @@ class MosoblgazAPI:
                 raise AuthenticationFailedException(
                     "captcha required, but response is unexpected"
                 )
+            else:
+                self._last_captcha = captcha
+                return captcha
+
+        # Clear last CAPTCHA to avoid reissue
+        self._last_captcha = None
 
         # Process possible temporary token response
         try:
@@ -434,11 +481,7 @@ class MosoblgazAPI:
             raise AuthenticationFailedException("temporary token is empty")
         return temporary_token
 
-    async def authenticate(
-        self,
-        temporary_token: str | CaptchaResponse | None = None,
-        captcha_result: str = "",
-    ) -> str:
+    async def authenticate(self, temporary_token: str, captcha_result: str = "") -> str:
         """Perform authentication.
 
         Captcha argument contains: [token, response]."""
@@ -450,11 +493,6 @@ class MosoblgazAPI:
         self._x_system_auth_token = x_system_auth_token
 
         try:
-            if temporary_token is None:
-                temporary_token = await self.fetch_temporary_token("login")
-            if not isinstance(temporary_token, str):
-                raise CaptchaRequiredException(temporary_token)
-
             auth_request_data = {
                 "mog_login[username]": self.username,
                 "mog_login[password]": self.password,
@@ -464,9 +502,25 @@ class MosoblgazAPI:
                 "_remember_me": "on",
             }
 
+            _LOGGER.debug("REQUEST DATA: %s", auth_request_data)
+
+            # Perform authentication request
             async with self._session.post(
-                self.AUTH_URL, data=auth_request_data
+                self.AUTH_URL,
+                data=auth_request_data,
+                headers={"X-Requested-With": "XMLHttpRequest"},
             ) as response:
+                try:
+                    data = await response.json()
+                except json.JSONDecodeError:
+                    raise AuthenticationFailedException(
+                        "server did not return a valid response"
+                    )
+                if not data.get("success"):
+                    if isinstance(data.get("errors"), dict):
+                        raise AuthenticationFailedException(*data["errors"].items())
+                    raise AuthenticationFailedException("unknown error occurred")
+                _LOGGER.debug("Response: %s", await response.text())
                 if response.status not in [200, 301, 302]:
                     if _LOGGER.level == logging.DEBUG:
                         _LOGGER.debug(f"Response: {await response.text()}")
@@ -477,6 +531,7 @@ class MosoblgazAPI:
 
                 _LOGGER.debug(f"Authentication on account {self.username} successful")
 
+            # Retrieve GraphQL token
             async with self._session.head(self.BASE_URL + "/lkk3/") as response:
                 graphql_token = response.headers.get("Token")
 
@@ -576,7 +631,7 @@ class MosoblgazAPI:
         with_default: bool = True,
     ):
         if "internalSystemStatuses" in statuses_response:
-            statuses_response = statuses_response["internalSystemStatuses"] # type: ignore
+            statuses_response = statuses_response["internalSystemStatuses"]  # type: ignore
 
         statuses_keys = (
             {
@@ -1152,14 +1207,6 @@ class RequestFailedException(MosoblgazException):
 
 class AuthenticationFailedException(MosoblgazException):
     """Failed to authenticate"""
-
-
-class CaptchaRequiredException(AuthenticationFailedException):
-    """Captcha is required for authentication"""
-
-    def __init__(self, captcha: CaptchaResponse) -> None:
-        self.captcha = captcha
-        super().__init__(captcha)
 
 
 class QueryFailedException(RequestFailedException):

@@ -2,6 +2,7 @@
 
 from typing import Final
 
+CONF_GRAPHQL_TOKEN: Final = "graphql_token"
 CONF_CONTRACTS: Final = "contracts"
 CONF_METER_NAME: Final = "meter_name"
 CONF_CONTRACT_NAME: Final = "contract_name"

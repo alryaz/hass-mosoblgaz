@@ -18,6 +18,7 @@ from typing import (
 )
 
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import (
@@ -65,8 +66,8 @@ INDICATIONS_SEQUENCE_SCHEMA = vol.All(
     lambda x: dict(map(lambda y: ("t" + str(y[0]), y[1]), enumerate(x, start=1))),
 )
 
-SERVICE_PUSH_INDICATIONS: Final = "push_indications"
-SERVICE_PUSH_INDICATIONS_SCHEMA: Final = vol.Schema(
+SERVICE_PUSH_INDICATIONS: Final[str] = "push_indications"
+SERVICE_PUSH_INDICATIONS_SCHEMA: Final[vol.Schema] = vol.Schema(
     vol.All(
         cv.make_entity_service_schema(
             {
@@ -124,7 +125,8 @@ def get_should_add_entities(
     return default_add_contracts, default_add_meters, default_add_invoices
 
 
-class MosoblgazUpdateCoordinator(DataUpdateCoordinator)
+class MosoblgazUpdateCoordinator(DataUpdateCoordinator):
+    pass
 
 async def async_account_updater(
     hass: HomeAssistant,

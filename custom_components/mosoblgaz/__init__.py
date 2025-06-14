@@ -13,11 +13,13 @@ __all__ = [
     "CONFIG_SCHEMA",
 ]
 
+import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Awaitable, Mapping, Optional, Union
 
 import aiohttp
+from homeassistant.helpers.aiohttp_client import async_create_clientsession
 import homeassistant.helpers.config_validation as cv
 import voluptuous as vol
 from homeassistant import config_entries
@@ -30,11 +32,14 @@ from homeassistant.const import (
     CONF_USERNAME,
 )
 from homeassistant.core import callback, HomeAssistant
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
 
 from .api import (
     AuthenticationFailedException,
+    CaptchaResponse,
+    Contract,
+    MosoblgazException,
     PartialOfflineException,
 )
 from .const import *
@@ -56,7 +61,9 @@ def is_privacy_logging_enabled(
 ) -> bool:
     if isinstance(config, ConfigEntry):
         if config.source == SOURCE_IMPORT:
-            config_data = hass.data.get(DATA_CONFIG, {}).get(config.data[CONF_USERNAME], {})
+            config_data = hass.data.get(DATA_CONFIG, {}).get(
+                config.data[CONF_USERNAME], {}
+            )
         else:
             config_data = config.options
     else:
@@ -126,7 +133,7 @@ INTERVALS_SUBCONFIG = {
 
 
 def _unique_username_validator(
-    configs: list[Mapping[str, Any]]
+    configs: list[Mapping[str, Any]],
 ) -> list[Mapping[str, Any]]:
     existing_usernames = set()
     exceptions = []
@@ -228,6 +235,17 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 
+async def run_with_cnr(coro: Awaitable):
+    try:
+        return await coro
+    except AuthenticationFailedException as exc:
+        raise ConfigEntryAuthFailed(str(exc))
+    except PartialOfflineException:
+        raise ConfigEntryNotReady("Service is partially offline")
+    except MosoblgazException as exc:
+        raise ConfigEntryNotReady(f"Generic API error: {exc}")
+
+
 async def async_setup_entry(
     hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ):
@@ -268,22 +286,16 @@ async def async_setup_entry(
 
     session = aiohttp.ClientSession(timeout=timeout)
 
-    try:
+    api_object = MosoblgazAPI(
+        username=username,
+        password=user_cfg[CONF_PASSWORD],
+        session=async_create_clientsession(hass),
+        graphql_token=user_cfg.get(CONF_GRAPHQL_TOKEN),
+    )
+
+    async def _try_fetch_contracts(auth: bool):
         try:
-            api_object = MosoblgazAPI(
-                username=username,
-                password=user_cfg[CONF_PASSWORD],
-                session=session,
-            )
-
-            await api_object.authenticate()
-
-            contracts = await api_object.fetch_contracts(with_data=False)
-
-        except AuthenticationFailedException as exc:
-            _LOGGER.error(f"{log_prefix} Error authenticating: {exc}")
-            raise ConfigEntryNotReady
-
+            return await api_object.fetch_contracts()
         except PartialOfflineException:
             _LOGGER.error(
                 f"{log_prefix} Service appears to be partially offline, which prevents "
@@ -295,9 +307,30 @@ async def async_setup_entry(
             _LOGGER.error(f'{log_prefix} API error with user: "{exc}"')
             raise ConfigEntryNotReady
 
-    except BaseException:
-        await session.close()
-        raise
+    contracts: dict[str, Contract] | None = None
+    if api_object.graphql_token:
+        try:
+            contracts = await run_with_cnr(api_object.fetch_contracts())
+        except ConfigEntryAuthFailed:
+            _LOGGER.info("GraphQL token may be obsolete, ignoring")
+            api_object.graphql_token = None
+
+    if not api_object.graphql_token:
+        temporary_token = await api_object.fetch_temporary_token()
+        if isinstance(temporary_token, CaptchaResponse):
+            raise ConfigEntryAuthFailed("CAPTCHA input required")
+        await run_with_cnr(api_object.authenticate(temporary_token))
+        contracts = await run_with_cnr(api_object.fetch_contracts())
+
+    if user_cfg.get(CONF_GRAPHQL_TOKEN) != api_object.graphql_token:
+        merge_data = dict(config_entry.data)
+        merge_data[CONF_GRAPHQL_TOKEN] = api_object.graphql_token
+        _LOGGER.debug(
+            "%s GraphQL token has been updated: %s",
+            log_prefix,
+            api_object.graphql_token,
+        )
+        hass.config_entries.async_update_entry(config_entry, data=merge_data)
 
     if not contracts:
         _LOGGER.warning(f"{log_prefix} No contracts found under username")
@@ -389,39 +422,40 @@ async def async_unload_entry(
 async def async_migrate_entry(
     hass: HomeAssistant, config_entry: config_entries.ConfigEntry
 ) -> bool:
-    current_version = config_entry.version
     update_args = {}
     old_data = config_entry.data
+
+    if config_entry.source == SOURCE_IMPORT:
+        return False
 
     _LOGGER.debug(
         f'Migrating entry "{config_entry.entry_id}" '
         f"(type={config_entry.source}) "
-        f"from version {current_version}",
+        f"from version {config_entry.version}",
     )
 
-    if current_version == 1:
-        if config_entry.source != SOURCE_IMPORT:
-            new_data = update_args.setdefault("data", {})
-            new_data[CONF_USERNAME] = old_data[CONF_USERNAME]
-            new_data[CONF_PASSWORD] = old_data[CONF_PASSWORD]
-
-            if CONF_INVERT_INVOICES in old_data:
-                new_options = update_args.setdefault("options", {})
-                new_options[CONF_INVERT_INVOICES] = old_data[CONF_INVERT_INVOICES]
-
-        current_version = 2
-
-    config_entry.version = current_version
-
-    if update_args:
-        _LOGGER.debug(
-            f"Updating configuration entry {config_entry.entry_id} "
-            f"with new data: {update_args}"
+    if config_entry.version == 1:
+        hass.config_entries.async_update_entry(
+            config_entry,
+            data={
+                CONF_USERNAME: config_entry.data[CONF_USERNAME],
+                CONF_PASSWORD: config_entry.data[CONF_PASSWORD],
+            },
+            options={
+                CONF_INVERT_INVOICES: config_entry.data.get(
+                    CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES
+                )
+            },
+            version=2,
         )
-        hass.config_entries.async_update_entry(config_entry, **update_args)
+
+    if config_entry.version == 2:
+        hass.config_entries.async_update_entry(
+            config_entry, unique_id=config_entry.data[CONF_USERNAME], version=3
+        )
 
     _LOGGER.debug(
         f"Migration of entry {config_entry.entry_id} "
-        f"to version {current_version} successful",
+        f"to version {config_entry.version} successful",
     )
     return True
