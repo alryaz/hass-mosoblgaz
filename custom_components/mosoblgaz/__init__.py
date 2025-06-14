@@ -282,8 +282,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         request_timeout = entry.options[CONF_TIMEOUT] or request_timeout
 
     # Instantiate a separate client session
-    session = async_create_clientsession(hass)
-    session.timeout = ClientTimeout(total=request_timeout)
+    session = async_create_clientsession(
+        hass, timeout=ClientTimeout(total=request_timeout)
+    )
 
     # Instantiate api object
     api = MosoblgazAPI(
