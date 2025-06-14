@@ -1,5 +1,6 @@
 from base64 import b64encode
 import logging
+from tkinter import NO
 from typing import Any, Final, Mapping, Optional
 
 import aiohttp
@@ -25,13 +26,11 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from . import CONF_GRAPHQL_TOKEN, DATA_API_OBJECTS, privacy_formatter
+from . import CONF_GRAPHQL_TOKEN, MosoblgazException, PartialOfflineException
 from .api import (
     AuthenticationFailedException,
     CaptchaResponse,
     MosoblgazAPI,
-    MosoblgazException,
-    PartialOfflineException,
 )
 from .const import (
     CONF_INVERT_INVOICES,
@@ -73,6 +72,10 @@ USER_WITH_CAPTCHA_SCHEMA = USER_SCHEMA.extend(
         vol.Optional(CONF_CAPTCHA): cv.string,
     }
 )
+
+
+class _FormException(Exception):
+    """Class for exceptions pertaining to forms"""
 
 
 class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
@@ -146,13 +149,15 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
                         self._temporary_token = await self._api.solve_captcha(
                             captcha, self._temporary_token
                         )
+                    except PartialOfflineException:
+                        return self.async_abort(reason="partial_offline")
                     except AuthenticationFailedException:
-                        # @TODO: handle this issue
-                        return {"base": "authentication_failed"}
-
+                        raise _FormException({"captcha": "invalid_captcha"})
+                    except MosoblgazException:
+                        raise _FormException({"base": "unknown_error"})
                     if not self._temporary_token:
                         # @TODO: handle this issue
-                        return {"base": "empty_temporary_token"}
+                        raise _FormException({"base": "empty_temporary_token"})
                 else:
                     # Attempt to fetch a new CAPTCHA
                     self._temporary_token = await self._api.fetch_temporary_token()
@@ -162,9 +167,13 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 
         try:
             await self._api.authenticate(self._temporary_token, captcha)
+        except PartialOfflineException:
+            return self.async_abort(reason="partial_offline")
         except AuthenticationFailedException:
             # @TODO: handle this issue
-            return {"base": "unknown_error"}
+            raise _FormException({"base": "invalid_credentials"})
+        except MosoblgazException:
+            raise _FormException({"base": "unknown_error"})
 
         data = {
             CONF_PASSWORD: self._api.password,
@@ -189,11 +198,16 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         after_process: bool = False,
     ) -> ConfigFlowResult:
         _LOGGER.info("Showing without captcha step")
+        errors = None
         if not (after_process or user_input is None):
-            return await self._async_process_authentication(user_input)
+            try:
+                return await self._async_process_authentication(user_input)
+            except _FormException as exc:
+                errors = _FormException.args[0]
         return self.async_show_form(
             step_id="without_captcha",
             data_schema=REAUTH_SCHEMA if self._reauth_entry_id else USER_SCHEMA,
+            errors=errors,
         )
 
     async def async_step_with_captcha(
@@ -202,8 +216,12 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         after_process: bool = False,
     ) -> ConfigFlowResult:
         _LOGGER.info("Showing with captcha step")
+        errors = None
         if not (after_process or user_input is None):
-            return await self._async_process_authentication(user_input)
+            try:
+                return await self._async_process_authentication(user_input)
+            except _FormException as exc:
+                errors = _FormException.args[0]
         temporay_token = self._temporary_token
         if not isinstance(temporay_token, CaptchaResponse):
             return self.async_abort(reason="unknown_error")
@@ -226,6 +244,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
                 else USER_WITH_CAPTCHA_SCHEMA
             ),
             description_placeholders=description_placeholders,
+            errors=errors,
         )
 
     @staticmethod
@@ -237,7 +256,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         return MosoblgazOptionsFlowHandler(config_entry)
 
 
-OPTIONS_CHEMA = vol.Schema(
+OPTIONS_SCHEMA: Final[vol.Schema] = vol.Schema(
     {
         vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
         vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
@@ -263,22 +282,8 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
         :return: Flow response
         """
 
-        # Choose how to handle based on config source
-        if self.config_entry.source == SOURCE_IMPORT:
-            options_source = self.config_entry.data
-            coro = self.async_step_import(user_input=user_inconfig_entryput)
-        else:
-            options_source = self.config_entry.options
-            coro = self.async_step_user(user_input=user_input)
-
-        # Setup logging prefix
-        username = self.config_entry.data[CONF_USERNAME]
-        if options_source.get(CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING):
-            username = privacy_formatter(username)
-        self.log_prefix = f"(user|{username})"
-
         # Execute unawaited coroutine
-        return await coro
+        return await self.async_step_user()
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """
@@ -289,12 +294,13 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             _LOGGER.debug(f"{self.log_prefix} Saving options: {user_input}")
             return self.async_create_entry(title="", data=user_input)
+        else:
+            # Use default options
+            user_input = self.config_entry.options
 
         _LOGGER.debug(f"{self.log_prefix} Showing options form for GUI configuration")
 
         return self.async_show_form(
             step_id="user",
-            data_schema=self.add_suggested_values_to_schema(
-                OPTIONS_CHEMA, self.config_entry.options or {}
-            ),
+            data_schema=self.add_suggested_values_to_schema(OPTIONS_SCHEMA, user_input),
         )
