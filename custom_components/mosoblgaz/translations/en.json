@@ -8,12 +8,21 @@
             "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log."
         },
         "step": {
-            "user": {
+            "without_captcha": {
                 "data": {
                     "username": "Username",
                     "password": "Password"
                 },
                 "description": "Enter your login details for your Mosoblgaz account. By default, all accounts linked to your user will be added.",
+                "title": "Mosoblgaz Login"
+            },
+            "with_captcha": {
+                "data": {
+                    "username": "Username",
+                    "password": "Password",
+                    "captcha": "CAPTCHA"
+                },
+                "description": "Enter your login details for your Mosoblgaz account. By default, all accounts linked to your user will be added.\n\nPopulate the CAPTCHA text field with the text displayed on the image below:\n![{captcha_token}]({captcha_url})\n_Hint: Leave the field empty to refresh captcha._",
                 "title": "Mosoblgaz Login"
             },
             "contract": {

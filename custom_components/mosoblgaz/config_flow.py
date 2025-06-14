@@ -1,7 +1,12 @@
+from base64 import b64encode
 import logging
-from typing import Any, Final, Optional
+from typing import Any, Final, Mapping, Optional
 
 import aiohttp
+from homeassistant.helpers.aiohttp_client import (
+    async_create_clientsession,
+    async_get_clientsession,
+)
 import voluptuous as vol
 from homeassistant.config_entries import (
     ConfigEntry,
@@ -20,9 +25,11 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from . import privacy_formatter
+from . import CONF_GRAPHQL_TOKEN, DATA_API_OBJECTS, privacy_formatter
 from .api import (
     AuthenticationFailedException,
+    CaptchaResponse,
+    MosoblgazAPI,
     MosoblgazException,
     PartialOfflineException,
 )
@@ -38,117 +45,187 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+CONF_CAPTCHA: Final = "captcha"
 CONF_ENABLE_CONTRACT: Final = "enable_contract"
 CONF_ADD_ALL_CONTRACTS: Final = "add_all_contracts"
+
+REAUTH_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_PASSWORD): cv.string,
+    }
+)
+
+REAUTH_WITH_CAPTCHA_SCHEMA = REAUTH_SCHEMA.extend(
+    {
+        vol.Optional(CONF_CAPTCHA): cv.string,
+    }
+)
+
+USER_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_USERNAME): cv.string,
+        vol.Required(CONF_PASSWORD): cv.string,
+    }
+)
+
+USER_WITH_CAPTCHA_SCHEMA = USER_SCHEMA.extend(
+    {
+        vol.Optional(CONF_CAPTCHA): cv.string,
+    }
+)
 
 
 class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mosoblgaz config entries."""
 
-    VERSION = 2
+    VERSION = 3
     CONNECTION_CLASS = CONN_CLASS_CLOUD_POLL
 
+    _api: MosoblgazAPI
+
     def __init__(self) -> None:
-        """Instantiate config flow."""
-        self._contracts = None
-        self._last_contract_id = None
-        self._current_config = None
+        self._temporary_token: str | CaptchaResponse | None = None
 
-        from collections import OrderedDict
-
-        self.schema_user = vol.Schema(OrderedDict())
-
-    async def _check_entry_exists(self, username: str) -> bool:
-        current_entries = self._async_current_entries()
-
-        for config_entry in current_entries:
-            if config_entry.data.get(CONF_USERNAME) == username:
-                return True
-
-        return False
-
-    # Initial step for user interaction
-    async def async_step_user(
-        self, user_input: Optional[dict[str, Any]] = None
+    async def async_step_reauth(
+        self, entry_data: Mapping[str, Any]
     ) -> ConfigFlowResult:
-        """Handle a flow start."""
-        if user_input is None:
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(CONF_USERNAME): cv.string,
-                        vol.Required(CONF_PASSWORD): cv.string,
-                    }
-                ),
-            )
+        """Perform reauth upon an API authentication error."""
+        return await self.async_step_user(self._get_reauth_entry())
 
-        username = user_input[CONF_USERNAME]
+    async def async_step_user(
+        self, user_input: Mapping[str, Any] | ConfigEntry | None = None
+    ) -> ConfigFlowResult:
+        """Route based on the required of the temporary token presence."""
 
-        if await self._check_entry_exists(username):
-            return self.async_abort(reason="already_exists")
+        # Handle input coming from reauth entry
+        # self._api = MosoblgazAPI("", "", async_create_clientsession(self.hass))
+        self._api = MosoblgazAPI("", "", aiohttp.ClientSession())
 
-        from .api import MosoblgazAPI
+        _LOGGER.info("Showing user step")
+
+        # Prefetch temporary token
+        self._temporary_token = await self._api.fetch_temporary_token()
+        if isinstance(self._temporary_token, CaptchaResponse):
+            method = self.async_step_with_captcha
+        else:
+            method = self.async_step_without_captcha
+
+        # Run one of the captcha methods
+        return await method({CONF_USERNAME: self._api.username}, True)
+
+    async def _async_process_authentication(
+        self, user_input: dict[str, Any]
+    ) -> ConfigFlowResult:
+        if self._reauth_entry_id:
+            self._api.username = self._get_reauth_entry().data[CONF_USERNAME]
+        else:
+            self._api.username = user_input[CONF_USERNAME]
+
+        self._api.password = user_input.pop(CONF_PASSWORD)
+        captcha = ""
+
+        if self._temporary_token is None:
+            # Processing came from oone of the methods, however
+            # something managed to lose temporary token. While this
+            # should never occur, fix it 'just in case it happens'.
+            _LOGGER.debug("Fixing flow on non-existing temporary token")
+            self._temporary_token = await self._api.fetch_temporary_token()
+
+        if isinstance(self._temporary_token, CaptchaResponse):
+            try:
+                captcha = user_input.pop(CONF_CAPTCHA)
+            except KeyError:
+                # Processing came from 'without_captcha', but evidently
+                # expected to come from 'with_captcha'; fix flow, although
+                # this should never occur.
+                _LOGGER.debug("Fixing flow on non-existent CAPTCHA")
+            else:
+                if captcha:
+                    # Attempt solving CAPTCHA
+                    try:
+                        self._temporary_token = await self._api.solve_captcha(
+                            captcha, self._temporary_token
+                        )
+                    except AuthenticationFailedException:
+                        # @TODO: handle this issue
+                        return {"base": "authentication_failed"}
+
+                    if not self._temporary_token:
+                        # @TODO: handle this issue
+                        return {"base": "empty_temporary_token"}
+                else:
+                    # Attempt to fetch a new CAPTCHA
+                    self._temporary_token = await self._api.fetch_temporary_token()
+
+        if isinstance(self._temporary_token, CaptchaResponse):
+            return await self.async_step_with_captcha(user_input, True)
 
         try:
-            async with aiohttp.ClientSession() as session:
-                api = MosoblgazAPI(
-                    username=username,
-                    password=user_input[CONF_PASSWORD],
-                    session=session,
-                )
+            await self._api.authenticate(self._temporary_token, captcha)
+        except AuthenticationFailedException:
+            # @TODO: handle this issue
+            return {"base": "unknown_error"}
 
-                await api.authenticate()
+        data = {
+            CONF_PASSWORD: self._api.password,
+            CONF_GRAPHQL_TOKEN: self._api.graphql_token,
+        }
 
-                contracts = await api.fetch_contracts(with_data=False)
+        await self.async_set_unique_id(self._api.username)
 
-                if not contracts:
-                    return self.async_abort(reason="contracts_missing")
-
-        except AuthenticationFailedException as exc:
-            _LOGGER.error(f"Error during authentication flow: {exc}", exc_info=exc)
-            # @TODO: display captcha
-            return self.async_show_form(
-                step_id="user",
-                data_schema=vol.Schema(
-                    {
-                        vol.Required(
-                            CONF_USERNAME, default=user_input[CONF_USERNAME]
-                        ): cv.string,
-                        vol.Required(
-                            CONF_PASSWORD, default=user_input[CONF_PASSWORD]
-                        ): cv.string,
-                    }
-                ),
-                errors={"base": "invalid_credentials"},
+        if self._reauth_entry_id:
+            self._abort_if_unique_id_mismatch(reason="wrong_account")
+            return self.async_update_reload_and_abort(
+                self._get_reauth_entry(), data_updates=data
             )
 
-        except PartialOfflineException:
-            return self.async_abort(reason="partial_offline")
+        self._abort_if_unique_id_configured()
+        data[CONF_USERNAME] = self._api.username
+        return self.async_create_entry(title=self._api.username, data=data)
 
-        except MosoblgazException:
-            return self.async_abort(reason="api_error")
-
-        return self.async_create_entry(title="User: " + username, data=user_input)
-
-    async def async_step_import(
-        self, user_input: dict[str, Any] | None = None
+    async def async_step_without_captcha(
+        self,
+        user_input: dict[str, Any] | None = None,
+        after_process: bool = False,
     ) -> ConfigFlowResult:
-        """
-        Handler for imported configurations (from YAML).
-        :param user_input: YAML configuration (at least username required)
-        :return: Entry creation command
-        """
-        if user_input is None:
+        _LOGGER.info("Showing without captcha step")
+        if not (after_process or user_input is None):
+            return await self._async_process_authentication(user_input)
+        return self.async_show_form(
+            step_id="without_captcha",
+            data_schema=REAUTH_SCHEMA if self._reauth_entry_id else USER_SCHEMA,
+        )
+
+    async def async_step_with_captcha(
+        self,
+        user_input: dict[str, Any] | None = None,
+        after_process: bool = False,
+    ) -> ConfigFlowResult:
+        _LOGGER.info("Showing with captcha step")
+        if not (after_process or user_input is None):
+            return await self._async_process_authentication(user_input)
+        temporay_token = self._temporary_token
+        if not isinstance(temporay_token, CaptchaResponse):
             return self.async_abort(reason="unknown_error")
-
-        username = user_input[CONF_USERNAME]
-
-        if await self._check_entry_exists(username):
-            return self.async_abort(reason="already_exists")
-
-        return self.async_create_entry(
-            title="User: " + username, data={CONF_USERNAME: username}
+        description_placeholders = {
+            "captcha_token": temporay_token.token,
+            "captcha_valid": temporay_token.valid_until,
+        }
+        async with self._api._session.get(temporay_token.file_url) as response:
+            description_placeholders["captcha_url"] = (
+                "data:image/"
+                + temporay_token.file_url.rsplit(".", 1)[1]
+                + ";base64,"
+                + b64encode(await response.read()).decode("ascii")
+            )
+        return self.async_show_form(
+            step_id="with_captcha",
+            data_schema=(
+                REAUTH_WITH_CAPTCHA_SCHEMA
+                if self._reauth_entry_id
+                else USER_WITH_CAPTCHA_SCHEMA
+            ),
+            description_placeholders=description_placeholders,
         )
 
     @staticmethod
@@ -158,6 +235,18 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
     ) -> "MosoblgazOptionsFlowHandler":
         """Mosoblgaz options callback."""
         return MosoblgazOptionsFlowHandler(config_entry)
+
+
+OPTIONS_CHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_INVERT_INVOICES, default=DEFAULT_INVERT_INVOICES): cv.boolean,
+        vol.Optional(CONF_TIMEOUT, default=DEFAULT_TIMEOUT): cv.positive_int,
+        vol.Optional(
+            CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL
+        ): cv.positive_int,
+        vol.Optional(CONF_PRIVACY_LOGGING, default=DEFAULT_PRIVACY_LOGGING): cv.boolean,
+    }
+)
 
 
 class MosoblgazOptionsFlowHandler(OptionsFlow):
@@ -177,7 +266,7 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
         # Choose how to handle based on config source
         if self.config_entry.source == SOURCE_IMPORT:
             options_source = self.config_entry.data
-            coro = self.async_step_import(user_input=user_input)
+            coro = self.async_step_import(user_input=user_inconfig_entryput)
         else:
             options_source = self.config_entry.options
             coro = self.async_step_user(user_input=user_input)
@@ -191,17 +280,6 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
         # Execute unawaited coroutine
         return await coro
 
-    async def async_step_import(self, user_input: dict[str, Any] | None = None):
-        """
-        Callback for entries imported from YAML.
-        :param user_input: User input mapping
-        :return: Flow response
-        """
-        _LOGGER.debug(
-            f"{self.log_prefix} Showing options form for imported configuration"
-        )
-        return self.async_show_form(step_id="import")
-
     async def async_step_user(self, user_input: dict[str, Any] | None = None):
         """
         Callback for entries created via "Integrations" UI.
@@ -214,33 +292,9 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
 
         _LOGGER.debug(f"{self.log_prefix} Showing options form for GUI configuration")
 
-        options = self.config_entry.options or {}
-
-        default_invert_invoices = options.get(
-            CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES
-        )
-        default_timeout = options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        default_scan_interval = options.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
-        default_privacy_logging = options.get(
-            CONF_PRIVACY_LOGGING, DEFAULT_PRIVACY_LOGGING
-        )
-
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {
-                    vol.Optional(
-                        CONF_INVERT_INVOICES, default=default_invert_invoices
-                    ): cv.boolean,
-                    vol.Optional(
-                        CONF_TIMEOUT, default=default_timeout
-                    ): cv.positive_int,
-                    vol.Optional(
-                        CONF_SCAN_INTERVAL, default=default_scan_interval
-                    ): cv.positive_int,
-                    vol.Optional(
-                        CONF_PRIVACY_LOGGING, default=default_privacy_logging
-                    ): cv.boolean,
-                }
+            data_schema=self.add_suggested_values_to_schema(
+                OPTIONS_CHEMA, self.config_entry.options or {}
             ),
         )
