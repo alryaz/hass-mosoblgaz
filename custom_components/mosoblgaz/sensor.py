@@ -8,6 +8,7 @@ import logging
 from typing import Any, Mapping, Union, final
 
 import homeassistant.helpers.config_validation as cv
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 import voluptuous as vol
 from homeassistant import config_entries
@@ -130,7 +131,14 @@ class MosoblgazBaseSensor(MosoblgazCoordinatorEntity, SensorEntity, ABC):
         # Set initial attributes
         attrs = {ATTR_CONTRACT_CODE: contract.contract_id}
         self._attr_extra_state_attributes = attrs
-        self._attr_translation_placeholders = dict(attrs)  # poor man's copy
+        self._attr_device_info = DeviceInfo(
+            manufacturer="Mosoblgaz",
+            serial_number=contract.contract_id,
+            model=contract.address,
+            translation_key="contract",
+            translation_placeholders={"contract_code": contract.contract_id},
+            identifiers={(DOMAIN, "contract_{}".format(contract.contract_id))},
+        )
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -207,12 +215,14 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
         self._meter = meter
 
         # Set initial attributes
-        attrs = {
-            ATTR_METER_CODE: self.meter.device_id,
-            ATTR_SERIAL: self.meter.serial,
-        }
-        self._attr_extra_state_attributes.update(attrs)
-        self._attr_translation_placeholders.update(attrs)
+        self._attr_unique_id = "meter_{}".format(meter.device_id)
+        self._attr_extra_state_attributes.update(
+            {
+                ATTR_METER_CODE: self.meter.device_id,
+                ATTR_SERIAL: self.meter.serial,
+            }
+        )
+        self._attr_translation_placeholders = {"meter_serial": self.meter.serial}
 
         # Reset extra attributes
         self._set_initial_state()
@@ -387,23 +397,27 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
         pass
 
 
+# class MosoblgazDeviceExpirySensor(MosoblgazBaseSensor):
+#     _attr_icon: str = "mdi:calendar-blank"
+#     _attr_device_class = SensorDeviceClass.TIMESTAMP
+#     _attr_entity_category = EntityCategory.DIAGNOSTIC
+#     _attr_translation_key = "device_service"
+#     def __init__(self, coordinator, contract, device: Device):
+#         super().__init__(coordinator, contract)
+#         self._attr_unique_id = "device_service_{}".format(device.device_id)
+
+
 class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
     _attr_icon: str = "mdi:receipt"
     _attr_native_unit_of_measurement = RUB_CURRENCY
     _attr_device_class = SensorDeviceClass.MONETARY
-    _attr_translation_key = "invoice_{}"
+    _attr_translation_key = "invoice"
 
     GROUP_ICONS = {
         INVOICE_GROUP_VDGO: "mdi:progress-wrench",
         INVOICE_GROUP_TECH: "mdi:pipe-wrench",
         INVOICE_GROUP_GAS: "mdi:stove",
     }
-
-    def __init__(
-        self, coordinator: MosoblgazCoordinatorEntity, contract: Contract
-    ) -> None:
-        super().__init__(coordinator, contract)
-        self._attr_extra_state_attributes({})
 
     def __init__(
         self,
@@ -417,9 +431,11 @@ class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
         # Set initial attributes
         self._attr_unique_id = "invoice_{}_{}".format(contract.contract_id, group_code)
         self._attr_extra_state_attributes[ATTR_INVOICE_GROUP] = group_code
-        self._attr_translation_placeholders[ATTR_INVOICE_GROUP] = group_code
-        self._attr_translation_key = self._attr_translation_key.format(group_code)
         self._attr_icon = self.GROUP_ICONS.get(group_code, self._attr_icon)
+        if group_code in self.GROUP_ICONS:
+            self._attr_translation_key = "invoice_{}".format(group_code)
+        else:
+            self._attr_translation_placeholders = {"group_code": group_code}
 
         # Reset extra attributes
         self._set_initial_state()

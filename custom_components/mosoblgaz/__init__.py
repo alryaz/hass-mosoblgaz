@@ -121,14 +121,42 @@ class MosoblgazUpdateCoordinator(DataUpdateCoordinator[dict[str, Contract]]):
         self.api = api
         super().__init__(hass, logger, name=DOMAIN, update_interval=update_interval)
 
-    async def _async_update_data(self):
-        return await self.api.fetch_contracts(with_data=True)
+    async def _async_update_data(self) -> dict[str, Contract]:
+        if self.api.graphql_token:
+            try:
+                contracts = await async_run_with_exceptions(
+                    self.api.fetch_contracts(with_data=True)
+                )
+            except ConfigEntryAuthFailed:
+                self.logger.info("GraphQL token may be obsolete, ignoring")
+                self.api.graphql_token = None
+
+        if not self.api.graphql_token:
+            temporary_token = await self.api.fetch_temporary_token()
+            if isinstance(temporary_token, CaptchaResponse):
+                raise ConfigEntryAuthFailed("CAPTCHA input required")
+            await async_run_with_exceptions(self.api.authenticate(temporary_token))
+            contracts = await async_run_with_exceptions(
+                self.api.fetch_contracts(with_data=True)
+            )
+
+        if self.config_entry.data.get(CONF_GRAPHQL_TOKEN) != self.api.graphql_token:
+            merge_data = dict(self.config_entry.data)
+            merge_data[CONF_GRAPHQL_TOKEN] = self.api.graphql_token
+            self.logger.debug(
+                "GraphQL token has been updated: %s", self.api.graphql_token
+            )
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data=merge_data
+            )
+
+        return contracts
 
 
 class MosoblgazCoordinatorEntity(CoordinatorEntity[MosoblgazUpdateCoordinator]):
     _attr_attribution: str = ATTRIBUTION
 
-    _attr_translation_placeholders: dict[str, str]
+    _attr_has_entity_name: bool = True
     """Override type from Mapping to dict"""
 
     @property
@@ -254,36 +282,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         graphql_token=entry.data.get(CONF_GRAPHQL_TOKEN),
     )
 
-    contracts: dict[str, Contract] | None = None
-    if api_object.graphql_token:
-        try:
-            contracts = await async_run_with_exceptions(api_object.fetch_contracts())
-        except ConfigEntryAuthFailed:
-            logger.info("GraphQL token may be obsolete, ignoring")
-            api_object.graphql_token = None
-
-    if not api_object.graphql_token:
-        temporary_token = await api_object.fetch_temporary_token()
-        if isinstance(temporary_token, CaptchaResponse):
-            raise ConfigEntryAuthFailed("CAPTCHA input required")
-        await async_run_with_exceptions(api_object.authenticate(temporary_token))
-        contracts = await async_run_with_exceptions(api_object.fetch_contracts())
-
-    if entry.data.get(CONF_GRAPHQL_TOKEN) != api_object.graphql_token:
-        merge_data = dict(entry.data)
-        merge_data[CONF_GRAPHQL_TOKEN] = api_object.graphql_token
-        logger.debug("GraphQL token has been updated: %s", api_object.graphql_token)
-        hass.config_entries.async_update_entry(entry, data=merge_data)
-
-    if not contracts:
-        logger.warning("No contracts found under username")
-        return False
-
     coordinator = MosoblgazUpdateCoordinator(hass, api_object, logger=logger)
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Refresh configuration entry to set initial data
     await coordinator.async_config_entry_first_refresh()
+
+    if not coordinator.data:
+        # No reason to perform updates
+        await coordinator.async_shutdown()
 
     # Forward entry setup to platform
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)

@@ -20,7 +20,7 @@ InvoiceDataType = Mapping[str, Any]
 INVOICE_GROUP_GAS = "gas"
 INVOICE_GROUP_VDGO = "vdgo"
 INVOICE_GROUP_TECH = "tech"
-INVOICE_GROUPS = (INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH)
+INVOICE_GROUPS = frozenset((INVOICE_GROUP_GAS, INVOICE_GROUP_VDGO, INVOICE_GROUP_TECH))
 
 
 def convert_date_dict(date_dict: dict[str, str | int]) -> datetime:

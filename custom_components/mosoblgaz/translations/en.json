@@ -1,54 +1,253 @@
 {
     "config": {
         "error": {
+            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log.",
             "invalid_credentials": "Invalid username or password.",
-            "nothing_enabled": "None of the contracts have been selected to be added to the system.",
-            "contracts_missing": "The user has no contracts to add.",
-            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later.",
-            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log."
+            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later."
         },
         "step": {
-            "without_captcha": {
-                "data": {
-                    "username": "Username",
-                    "password": "Password"
-                },
-                "description": "Enter your login details for your Mosoblgaz account. By default, all accounts linked to your user will be added.",
-                "title": "Mosoblgaz Login"
-            },
             "with_captcha": {
                 "data": {
-                    "username": "Username",
+                    "captcha": "CAPTCHA",
                     "password": "Password",
-                    "captcha": "CAPTCHA"
+                    "username": "Username"
                 },
-                "description": "Enter your login details for your Mosoblgaz account. By default, all accounts linked to your user will be added.\n\nPopulate the CAPTCHA text field with the text displayed on the image below:\n![{captcha_token}]({captcha_url})\n_Hint: Leave the field empty to refresh captcha._",
+                "description": "Enter your login details for your Mosoblgaz account.\n\nPopulate the CAPTCHA text field with the text displayed on the image below:\n![{captcha_token}]({captcha_url})\n_Hint: Leave the field empty to refresh captcha._",
                 "title": "Mosoblgaz Login"
             },
-            "contract": {
+            "without_captcha": {
                 "data": {
-                    "enable_contract": "Add contract",
-                    "meters": "Add meters",
-                    "invoices": "Add invoices"
+                    "password": "Password",
+                    "username": "Username"
                 },
-                "description": "Choose options for contract no. {{ code }}.\nDisabling contract option will completely disable the contract!",
-                "title": "Contract no. {{ code }}"
+                "description": "Enter your login details for your Mosoblgaz account.",
+                "title": "Mosoblgaz Login"
             }
         },
         "title": "Mosoblgaz"
+    },
+    "device": {
+        "contract": {
+            "name": "Contract {contract_code}"
+        }
+    },
+    "entity": {
+        "sensor": {
+            "invoice": {
+                "name": "{group_code} invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "invoice_gas": {
+                "name": "Gas utilization invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "invoice_tech": {
+                "name": "Technical support invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "invoice_vdgo": {
+                "name": "Equipment servicing invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "meter": {
+                "name": "Gas meter {meter_serial}",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            }
+        }
     },
     "options": {
         "step": {
             "user": {
                 "data": {
                     "invert_invoices": "Show positive invoice surplus",
-                    "timeout": "Timeout of requests to the server (in seconds)",
                     "scan_interval": "Update interval (in seconds)",
-                    "privacy_logging": "Hide personal information in logs"
+                    "timeout": "Timeout of requests to the server (in seconds)"
                 }
-            },
-            "import": {
-                "description": "*Settings via the interface are not available when configuring via YAML.*\n\nPlease edit the configuration file to change the parameters."
             }
         }
     }
