@@ -2,6 +2,8 @@
 
 from typing import Final
 
+PLATFORMS = ["sensor"]
+
 CONF_GRAPHQL_TOKEN: Final = "graphql_token"
 CONF_CONTRACTS: Final = "contracts"
 CONF_METER_NAME: Final = "meter_name"
@@ -17,7 +19,6 @@ DATA_CONFIG: Final = DOMAIN + "_config"
 DATA_API_OBJECTS: Final = DOMAIN + "_api_objects"
 DATA_ENTITIES: Final = DOMAIN + "_entities"
 DATA_UPDATERS: Final = DOMAIN + "_updaters"
-DATA_OPTIONS_LISTENERS: Final = DOMAIN + "_options_listeners"
 
 DEFAULT_SCAN_INTERVAL: Final = 60 * 60  # 1 hour
 DEFAULT_TIMEOUT: Final = 30  # 30 seconds
