@@ -12,7 +12,6 @@ CONF_METERS: Final = "meters"
 CONF_INVOICES: Final = "invoices"
 CONF_INVOICE_NAME: Final = "invoice_name"
 CONF_INVERT_INVOICES: Final = "invert_invoices"
-CONF_PRIVACY_LOGGING: Final = "privacy_logging"
 
 DOMAIN: Final = "mosoblgaz"
 DATA_CONFIG: Final = DOMAIN + "_config"
@@ -22,17 +21,16 @@ DATA_UPDATERS: Final = DOMAIN + "_updaters"
 
 DEFAULT_SCAN_INTERVAL: Final = 60 * 60  # 1 hour
 DEFAULT_TIMEOUT: Final = 30  # 30 seconds
-DEFAULT_CONTRACT_NAME_FORMAT: Final = "MOG Contract {contract_code}"
-DEFAULT_METER_NAME_FORMAT: Final = "MOG Meter {meter_code}"
-DEFAULT_INVOICE_NAME_FORMAT: Final = "MOG {group} Invoice {contract_code}"
+DEFAULT_CONTRACT_NAME_FORMAT: Final = "Mosoblgaz Contract {contract_code}"
+DEFAULT_METER_NAME_FORMAT: Final = "Mosoblgaz Meter {meter_code}"
+DEFAULT_INVOICE_NAME_FORMAT: Final = "Mosoblgaz {group} Invoice {contract_code}"
 DEFAULT_INVERT_INVOICES: Final = False
 DEFAULT_ADD_INVOICES: Final = True
 DEFAULT_ADD_METERS: Final = True
 DEFAULT_ADD_CONTRACTS: Final = True
-DEFAULT_PRIVACY_LOGGING: Final = True
 
 ATTRIBUTION: Final = "Data provided by Mosoblgaz"
-RUB_CURRENCY: Final = "руб."
+RUB_CURRENCY: Final = "RUB"
 
 ENTITIES_CONTRACT: Final = "contract"
 ENTITIES_METER_TARIFF: Final = "meter_tariff"
@@ -59,6 +57,7 @@ ATTR_LAST_CHARGED: Final = "last_charged"
 ATTR_PREVIOUS_VALUE: Final = "previous_value"
 
 ATTR_INVOICE_GROUP: Final = "invoice_group"
+ATTR_INVOICE_NAME: Final = "invoice_name"
 ATTR_PERIOD: Final = "period"
 ATTR_TOTAL: Final = "total"
 ATTR_PAID: Final = "paid"

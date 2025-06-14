@@ -1,6 +1,5 @@
 from base64 import b64encode
 import logging
-from tkinter import NO
 from typing import Any, Final, Mapping, Optional
 
 import aiohttp
@@ -10,11 +9,11 @@ from homeassistant.helpers.aiohttp_client import (
 )
 import voluptuous as vol
 from homeassistant.config_entries import (
+    SOURCE_REAUTH,
     ConfigEntry,
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
-    SOURCE_IMPORT,
     CONN_CLASS_CLOUD_POLL,
 )
 from homeassistant.const import (
@@ -26,17 +25,18 @@ from homeassistant.const import (
 from homeassistant.core import callback
 from homeassistant.helpers import config_validation as cv
 
-from . import CONF_GRAPHQL_TOKEN, MosoblgazException, PartialOfflineException
-from .api import (
+from custom_components.mosoblgaz import api
+from custom_components.mosoblgaz.api import (
     AuthenticationFailedException,
     CaptchaResponse,
     MosoblgazAPI,
+    MosoblgazException,
+    PartialOfflineException,
 )
-from .const import (
+from custom_components.mosoblgaz.const import (
+    CONF_GRAPHQL_TOKEN,
     CONF_INVERT_INVOICES,
-    CONF_PRIVACY_LOGGING,
     DEFAULT_INVERT_INVOICES,
-    DEFAULT_PRIVACY_LOGGING,
     DEFAULT_SCAN_INTERVAL,
     DEFAULT_TIMEOUT,
     DOMAIN,
@@ -82,6 +82,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Mosoblgaz config entries."""
 
     VERSION = 3
+    MINOR_VERSION = 2
     CONNECTION_CLASS = CONN_CLASS_CLOUD_POLL
 
     _api: MosoblgazAPI
@@ -101,8 +102,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         """Route based on the required of the temporary token presence."""
 
         # Handle input coming from reauth entry
-        # self._api = MosoblgazAPI("", "", async_create_clientsession(self.hass))
-        self._api = MosoblgazAPI("", "", aiohttp.ClientSession())
+        self._api = MosoblgazAPI("", "", async_get_clientsession())
 
         _LOGGER.info("Showing user step")
 
@@ -119,7 +119,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
     async def _async_process_authentication(
         self, user_input: dict[str, Any]
     ) -> ConfigFlowResult:
-        if self._reauth_entry_id:
+        if self.source == SOURCE_REAUTH:
             self._api.username = self._get_reauth_entry().data[CONF_USERNAME]
         else:
             self._api.username = user_input[CONF_USERNAME]
@@ -182,7 +182,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 
         await self.async_set_unique_id(self._api.username)
 
-        if self._reauth_entry_id:
+        if self.source == SOURCE_REAUTH:
             self._abort_if_unique_id_mismatch(reason="wrong_account")
             return self.async_update_reload_and_abort(
                 self._get_reauth_entry(), data_updates=data
@@ -203,10 +203,13 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
             try:
                 return await self._async_process_authentication(user_input)
             except _FormException as exc:
-                errors = _FormException.args[0]
+                errors = exc.args[0]
         return self.async_show_form(
             step_id="without_captcha",
-            data_schema=REAUTH_SCHEMA if self._reauth_entry_id else USER_SCHEMA,
+            data_schema=self.add_suggested_values_to_schema(
+                REAUTH_SCHEMA if self.source == SOURCE_REAUTH else USER_SCHEMA,
+                {CONF_USERNAME: self._api.username},
+            ),
             errors=errors,
         )
 
@@ -221,7 +224,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
             try:
                 return await self._async_process_authentication(user_input)
             except _FormException as exc:
-                errors = _FormException.args[0]
+                errors = exc.args[0]
         temporay_token = self._temporary_token
         if not isinstance(temporay_token, CaptchaResponse):
             return self.async_abort(reason="unknown_error")
@@ -238,10 +241,13 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
             )
         return self.async_show_form(
             step_id="with_captcha",
-            data_schema=(
-                REAUTH_WITH_CAPTCHA_SCHEMA
-                if self._reauth_entry_id
-                else USER_WITH_CAPTCHA_SCHEMA
+            data_schema=self.add_suggested_values_to_schema(
+                (
+                    REAUTH_WITH_CAPTCHA_SCHEMA
+                    if self.source == SOURCE_REAUTH
+                    else USER_WITH_CAPTCHA_SCHEMA
+                ),
+                {CONF_USERNAME: self._api.username},
             ),
             description_placeholders=description_placeholders,
             errors=errors,

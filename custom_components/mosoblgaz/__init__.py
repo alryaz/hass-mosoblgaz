@@ -1,9 +1,6 @@
 """Mosoblgaz API"""
 
 __all__ = [
-    "privacy_formatter",
-    "is_privacy_logging_enabled",
-    "get_print_username",
     "async_setup",
     "async_setup_entry",
     "async_unload_entry",
@@ -11,15 +8,24 @@ __all__ = [
     "async_migrate_entry",
     "DOMAIN",
     "CONFIG_SCHEMA",
+    "MosoblgazUpdateCoordinator",
+    "MosoblgazCoordinatorEntity",
+    "ConfigEntryLoggerAdapter",
 ]
 
+import asyncio
 import logging
 from datetime import timedelta
-from typing import Any, Awaitable, Mapping, MutableMapping, Optional
+from typing import Any, Awaitable, Mapping, MutableMapping, final
+import voluptuous as vol
 
+from homeassistant.helpers import entity_registry
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
 import homeassistant.helpers.config_validation as cv
-import voluptuous as vol
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+)
 from homeassistant import config_entries
 from homeassistant.config_entries import ConfigEntry, SOURCE_IMPORT, current_entry
 from homeassistant.const import (
@@ -32,14 +38,16 @@ from homeassistant.core import callback, HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers.typing import ConfigType
 
-from .api import (
+
+from custom_components.mosoblgaz.api import (
     AuthenticationFailedException,
     CaptchaResponse,
     Contract,
+    MosoblgazAPI,
     MosoblgazException,
     PartialOfflineException,
 )
-from .const import *
+from custom_components.mosoblgaz.const import *
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,10 +122,7 @@ CONFIG_SCHEMA = vol.Schema(
             [
                 vol.Schema(
                     {
-                        cv.deprecated(
-                            CONF_PRIVACY_LOGGING,
-                            default=DEFAULT_PRIVACY_LOGGING,
-                        ): cv.boolean,
+                        cv.deprecated("privacy_logging"): cv.boolean,
                         **AUTHENTICATION_SUBCONFIG,
                         **NAME_FORMATS_SUBCONFIG,
                         **FILTER_SUBCONFIG,
@@ -133,21 +138,42 @@ CONFIG_SCHEMA = vol.Schema(
 )
 
 
-@callback
-def _find_existing_entry(
-    hass: HomeAssistant, username: str
-) -> Optional[config_entries.ConfigEntry]:
-    existing_entries = hass.config_entries.async_entries(DOMAIN)
-    for config_entry in existing_entries:
-        if config_entry.data[CONF_USERNAME] == username:
-            return config_entry
-
-
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Set up the Mosoblgaz component."""
-    hass.data[DATA_API_OBJECTS] = {}
+    hass.data[DOMAIN] = {}
 
     return True
+
+
+class MosoblgazUpdateCoordinator(DataUpdateCoordinator[dict[str, Contract]]):
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        api: MosoblgazAPI,
+        update_interval: timedelta | None = None,
+        logger: logging.Logger | logging.LoggerAdapter = _LOGGER,
+    ) -> None:
+        self.api = api
+        super().__init__(hass, logger, name=DOMAIN, update_interval=update_interval)
+
+    async def _async_update_data(self):
+        return await self.api.fetch_contracts(with_data=True)
+
+
+class MosoblgazCoordinatorEntity(CoordinatorEntity[MosoblgazUpdateCoordinator]):
+    _attr_attribution: str = ATTRIBUTION
+
+    _attr_translation_placeholders: dict[str, str]
+    """Override type from Mapping to dict"""
+
+    @property
+    @final
+    def logger(self):
+        return self.coordinator.logger
+
+    @property
+    def api(self):
+        return self.coordinator.api
 
 
 async def run_with_cnr(coro: Awaitable):
@@ -161,26 +187,21 @@ async def run_with_cnr(coro: Awaitable):
         raise ConfigEntryNotReady(f"Generic API error: {exc}")
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
-):
+async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry):
     """Configuration entry setup procedure"""
-    user_cfg = config_entry.data
-    username = user_cfg[CONF_USERNAME]
+    user_cfg = entry.data
 
-    if config_entry.source == config_entries.SOURCE_IMPORT:
+    if entry.source == config_entries.SOURCE_IMPORT:
         return False
 
-    logger = ConfigEntryLoggerAdapter(config_entry=config_entry)
-    _LOGGER.debug("Setting up config entry")
-
-    from .api import MosoblgazAPI, MosoblgazException, today_blackout
+    logger = ConfigEntryLoggerAdapter(config_entry=entry)
+    logger.debug("Setting up config entry")
 
     api_object = MosoblgazAPI(
-        username=username,
-        password=user_cfg[CONF_PASSWORD],
+        username=entry.data[CONF_USERNAME],
+        password=entry.data[CONF_PASSWORD],
         session=async_create_clientsession(hass),
-        graphql_token=user_cfg.get(CONF_GRAPHQL_TOKEN),
+        graphql_token=entry.data.get(CONF_GRAPHQL_TOKEN),
     )
 
     contracts: dict[str, Contract] | None = None
@@ -198,25 +219,29 @@ async def async_setup_entry(
         await run_with_cnr(api_object.authenticate(temporary_token))
         contracts = await run_with_cnr(api_object.fetch_contracts())
 
-    if user_cfg.get(CONF_GRAPHQL_TOKEN) != api_object.graphql_token:
-        merge_data = dict(config_entry.data)
+    if entry.data.get(CONF_GRAPHQL_TOKEN) != api_object.graphql_token:
+        merge_data = dict(entry.data)
         merge_data[CONF_GRAPHQL_TOKEN] = api_object.graphql_token
         logger.debug("GraphQL token has been updated: %s", api_object.graphql_token)
-        hass.config_entries.async_update_entry(config_entry, data=merge_data)
+        hass.config_entries.async_update_entry(entry, data=merge_data)
 
     if not contracts:
         logger.warning("No contracts found under username")
         return False
 
-    hass.data[DATA_API_OBJECTS][config_entry.entry_id] = api_object
+    coordinator = MosoblgazUpdateCoordinator(hass, api_object, logger=logger)
+    hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # Refresh configuration entry to set initial data
+    await coordinator.async_config_entry_first_refresh()
 
     # Forward entry setup to platform
-    await hass.config_entries.async_forward_entry_setups(config_entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Create options update listener
-    config_entry.async_on_unload(config_entry.add_update_listener(async_update_options))
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-    _LOGGER.debug("Successfully set up account")
+    logger.debug("Successfully set up account")
 
     return True
 
@@ -251,75 +276,73 @@ async def async_update_options(
 
 
 async def async_unload_entry(
-    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
+    hass: HomeAssistant, entry: config_entries.ConfigEntry
 ) -> bool:
-    entry_id = config_entry.entry_id
-
-    logger = ConfigEntryLoggerAdapter(config_entry=config_entry)
-    logger.debug("Beginning unload procedure")
-
-    if not await hass.config_entries.async_unload_platforms(config_entry, PLATFORMS):
+    """Unload Raise3D entry."""
+    unload_ok = all(
+        await asyncio.gather(
+            *[
+                hass.config_entries.async_forward_entry_unload(entry, component)
+                for component in PLATFORMS
+            ]
+        )
+    )
+    if not unload_ok:
         return False
 
-    hass.data[DATA_ENTITIES].pop(entry_id, None)
-
-    if DATA_UPDATERS in hass.data and entry_id in hass.data[DATA_UPDATERS]:
-        # Remove API objects
-        logger.debug("Unloading updater")
-        updater_cancel, force_update = hass.data[DATA_UPDATERS].pop(entry_id)
-        if updater_cancel:
-            updater_cancel()
-        if not hass.data[DATA_UPDATERS]:
-            del hass.data[DATA_UPDATERS]
-
-    if DATA_API_OBJECTS in hass.data and entry_id in hass.data[DATA_API_OBJECTS]:
-        # Remove API objects
-        logger.debug("Unloading API object")
-        del hass.data[DATA_API_OBJECTS][entry_id]
-        if not hass.data[DATA_API_OBJECTS]:
-            del hass.data[DATA_API_OBJECTS]
-
-    logger.debug("Main unload procedure complete")
-
+    hass.data[DOMAIN].pop(entry.entry_id)
     return True
 
 
 async def async_migrate_entry(
-    hass: HomeAssistant, config_entry: config_entries.ConfigEntry
+    hass: HomeAssistant, entry: config_entries.ConfigEntry
 ) -> bool:
     _LOGGER.debug(
-        f'Migrating entry "{config_entry.entry_id}" '
-        f"(type={config_entry.source}) "
-        f"from version {config_entry.version}",
+        f'Migrating entry "{entry.entry_id}" '
+        f"(type={entry.source}) "
+        f"from version {entry.version}",
     )
 
-    if config_entry.source == SOURCE_IMPORT:
+    if entry.source == SOURCE_IMPORT:
         hass.config_entries.async_update_entry(
-            config_entry,
+            entry,
         )
 
-    if config_entry.version == 1:
+    if entry.version == 1:
         hass.config_entries.async_update_entry(
-            config_entry,
+            entry,
             data={
-                CONF_USERNAME: config_entry.data[CONF_USERNAME],
-                CONF_PASSWORD: config_entry.data[CONF_PASSWORD],
+                CONF_USERNAME: entry.data[CONF_USERNAME],
+                CONF_PASSWORD: entry.data[CONF_PASSWORD],
             },
             options={
-                CONF_INVERT_INVOICES: config_entry.data.get(
+                CONF_INVERT_INVOICES: entry.data.get(
                     CONF_INVERT_INVOICES, DEFAULT_INVERT_INVOICES
                 )
             },
             version=2,
         )
 
-    if config_entry.version == 2:
+    if entry.version == 2:
         hass.config_entries.async_update_entry(
-            config_entry, unique_id=config_entry.data[CONF_USERNAME], version=3
+            entry, unique_id=entry.data[CONF_USERNAME], version=3
         )
 
+    if entry.version == 3:
+        if entry.minor_version == 1:
+            await entity_registry.async_migrate_entries(
+                hass,
+                entry.entry_id,
+                lambda x: (
+                    {"new_unique_id": "contract_" + x.unique_id[3:]}
+                    if x.unique_id.startswith("ls_")
+                    else None
+                ),
+            )
+            hass.config_entries.async_update_entry(entry, minor_version=2)
+
     _LOGGER.debug(
-        f"Migration of entry {config_entry.entry_id} "
-        f"to version {config_entry.version} successful",
+        f"Migration of entry {entry.entry_id} "
+        f"to version {entry.version} successful",
     )
     return True
