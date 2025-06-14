@@ -15,6 +15,7 @@ __all__ = [
 
 import asyncio
 import logging
+from aiohttp import ClientTimeout
 import voluptuous as vol
 from datetime import timedelta
 from typing import Any, Awaitable, Mapping, MutableMapping, Sequence, TypeVar, final
@@ -275,17 +276,36 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     logger = ConfigEntryLoggerAdapter(config_entry=entry)
     logger.debug("Setting up config entry")
 
-    api_object = MosoblgazAPI(
+    # Load total timeout value
+    request_timeout = DEFAULT_TIMEOUT
+    if entry.options and CONF_TIMEOUT in entry.options:
+        request_timeout = entry.options[CONF_TIMEOUT] or request_timeout
+
+    # Instantiate a separate client session
+    session = async_create_clientsession(hass)
+    session.timeout = ClientTimeout(total=request_timeout)
+
+    # Instantiate api object
+    api = MosoblgazAPI(
         username=entry.data[CONF_USERNAME],
         password=entry.data[CONF_PASSWORD],
-        session=async_create_clientsession(hass),
+        session=session,
         graphql_token=entry.data.get(CONF_GRAPHQL_TOKEN),
     )
 
-    coordinator = MosoblgazUpdateCoordinator(hass, api_object, logger=logger)
+    # Load scheduling for updates
+    update_interval: int | float | timedelta = DEFAULT_SCAN_INTERVAL
+    if entry.options and CONF_SCAN_INTERVAL in entry.options:
+        update_interval = entry.options[CONF_SCAN_INTERVAL] or DEFAULT_SCAN_INTERVAL
+    if not isinstance(update_interval, timedelta):
+        update_interval = timedelta(seconds=update_interval)
+
+    # Setup coordinator
+    coordinator = MosoblgazUpdateCoordinator(hass, api, update_interval, logger)
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Refresh configuration entry to set initial data
+    logger.debug("Performing initial refresh on the coordinator")
     await coordinator.async_config_entry_first_refresh()
 
     if not coordinator.data:
@@ -293,12 +313,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await coordinator.async_shutdown()
 
     # Forward entry setup to platform
+    logger.debug("Forwarding setup to platforms")
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     # Create options update listener
     entry.async_on_unload(entry.add_update_listener(async_update_options))
 
-    logger.debug("Successfully set up account")
+    logger.debug("Finished config entry setup")
 
     return True
 
@@ -332,11 +353,6 @@ async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         f"(type={entry.source}) "
         f"from version {entry.version}",
     )
-
-    if entry.source == SOURCE_IMPORT:
-        hass.config_entries.async_update_entry(
-            entry,
-        )
 
     if entry.version == 1:
         hass.config_entries.async_update_entry(
