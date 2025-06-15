@@ -289,6 +289,10 @@
                 "indications": {
                     "description": "Gas meter values to be submitted",
                     "name": "Readings"
+                },
+                "return_on_error": {
+                    "description": "Return the result dictionary even if an error occurred",
+                    "name": "Return on error"
                 }
             },
             "name": "Push indications to Mosoblgaz"

@@ -4,6 +4,7 @@ Retrieves values regarding current state of contracts.
 """
 
 from abc import ABC
+import asyncio
 from datetime import date
 import logging
 from typing import Any, Generic, Mapping, TypeVar, Union, final
@@ -11,6 +12,7 @@ from typing import Any, Generic, Mapping, TypeVar, Union, final
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.typing import VolSchemaType
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.components.sensor import (
@@ -19,7 +21,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.const import ATTR_ENTITY_ID, ATTR_MODEL, EntityCategory, UnitOfVolume
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, SupportsResponse
 
 from custom_components.mosoblgaz import (
     MosoblgazCoordinatorEntity,
@@ -39,39 +41,34 @@ from custom_components.mosoblgaz.const import *
 
 _LOGGER: logging.Logger = logging.getLogger(__name__)
 
-INDICATIONS_MAPPING_SCHEMA = vol.Schema(
+INDICATIONS_MAPPING_SCHEMA: Final[VolSchemaType] = vol.Schema(
     {
         vol.Required(vol.Match(r"t\d+")): cv.positive_float,
     }
 )
 
-INDICATIONS_SEQUENCE_SCHEMA = vol.All(
+INDICATIONS_SEQUENCE_SCHEMA: Final[VolSchemaType] = vol.All(
     vol.Any(vol.All(cv.positive_float, cv.ensure_list), [cv.positive_float]),
     lambda x: dict(map(lambda y: ("t" + str(y[0]), y[1]), enumerate(x, start=1))),
 )
 
 SERVICE_PUSH_INDICATIONS: Final[str] = "push_indications"
-SERVICE_PUSH_INDICATIONS_SCHEMA: Final[vol.Schema] = vol.Schema(
-    vol.All(
-        cv.make_entity_service_schema(
-            {
-                vol.Required(ATTR_INDICATIONS): vol.Any(
-                    vol.All(
-                        cv.string,
-                        lambda x: list(map(str.strip, x.split(","))),
-                        INDICATIONS_SEQUENCE_SCHEMA,
-                    ),
-                    INDICATIONS_MAPPING_SCHEMA,
-                    INDICATIONS_SEQUENCE_SCHEMA,
-                ),
-                # vol.Optional(ATTR_IGNORE_PERIOD, default=False): cv.boolean,
-                vol.Optional(ATTR_IGNORE_INDICATIONS, default=False): cv.boolean,
-                vol.Optional(ATTR_INCREMENTAL, default=False): cv.boolean,
-                vol.Optional("notification"): lambda x: x,
-            }
+SERVICE_PUSH_INDICATIONS_SCHEMA: Final[VolSchemaType] = cv.make_entity_service_schema(
+    {
+        vol.Required(ATTR_INDICATIONS): vol.Any(
+            vol.All(
+                cv.string,
+                lambda x: list(map(str.strip, x.split(","))),
+                INDICATIONS_SEQUENCE_SCHEMA,
+            ),
+            INDICATIONS_MAPPING_SCHEMA,
+            INDICATIONS_SEQUENCE_SCHEMA,
         ),
-        cv.deprecated("notification"),
-    )
+        # vol.Optional(ATTR_IGNORE_PERIOD, default=False): cv.boolean,
+        vol.Optional(ATTR_IGNORE_INDICATIONS, default=False): cv.boolean,
+        vol.Optional(ATTR_INCREMENTAL, default=False): cv.boolean,
+        vol.Optional(ATTR_RETURN_ON_ERROR, default=False): cv.boolean,
+    }
 )
 
 
@@ -101,7 +98,7 @@ async def async_setup_entry(
         # Add contract sensor
         new_entities.append(MosoblgazContractSensor(coordinator, contract))
 
-        for meter_id, meter in contract.meters.items():
+        for meter in contract.meters.items():
             new_entities.append(MosoblgazMeterSensor(coordinator, meter))
 
         for device_id, device in contract.devices.items():
@@ -298,6 +295,7 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
             SERVICE_PUSH_INDICATIONS_SCHEMA,
             "async_service_" + SERVICE_PUSH_INDICATIONS,
             (FEATURE_PUSH_INDICATIONS,),
+            supports_response=SupportsResponse.OPTIONAL,
         )
 
     def _handle_device_update(self):
@@ -315,42 +313,6 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
             )
         else:
             self._set_initial_state()
-
-    def _fire_callback_event(
-        self,
-        call_data: Mapping[str, Any],
-        event_data: Mapping[str, Any],
-        event_id: str,
-    ) -> None:
-        hass = self.hass
-        comment = event_data.get(ATTR_COMMENT)
-
-        if comment is not None:
-            message = str(comment)
-            comment = "Response comment: " + str(comment)
-        else:
-            comment = "Response comment not provided"
-            message = comment
-
-        _LOGGER.log(
-            logging.INFO if event_data.get(ATTR_SUCCESS) else logging.ERROR,
-            comment,
-        )
-        _LOGGER.debug(f"Firing {event_id} with fields: {event_data}")
-
-        hass.bus.async_fire(
-            event_type=event_id,
-            event_data={
-                ATTR_ENTITY_ID: self.entity_id,
-                ATTR_METER_CODE: self.device.device_id,
-                ATTR_SERIAL: self.device.serial,
-                ATTR_CALL_PARAMS: dict(call_data),
-                ATTR_SUCCESS: False,
-                ATTR_INDICATIONS: None,
-                ATTR_COMMENT: message,
-                **event_data,
-            },
-        )
 
     @staticmethod
     def _get_real_indications(
@@ -392,7 +354,16 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
         if meter is None:
             raise Exception("Meter is unavailable")
 
-        event_data = {ATTR_SUCCESS: False}
+        event_data = {
+            ATTR_SUCCESS: False,
+            ATTR_ENTITY_ID: self.entity_id,
+            ATTR_METER_CODE: self.device.device_id,
+            ATTR_SERIAL: self.device.serial,
+            ATTR_CALL_PARAMS: dict(call_data),
+            ATTR_SUCCESS: False,
+            ATTR_INDICATIONS: None,
+            ATTR_COMMENT: "Response comment not provided",
+        }
 
         try:
             indications = self._get_real_indications(meter, call_data)
@@ -411,27 +382,38 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
 
         except MosoblgazException as exc:
             event_data[ATTR_COMMENT] = f"API error: {exc}"
-            raise
+            if not call_data.get(ATTR_RETURN_ON_ERROR):
+                raise
 
         except BaseException as exc:
             event_data[ATTR_COMMENT] = f"Unknown error: {exc}"
             _LOGGER.error(event_data[ATTR_COMMENT], exc_info=exc)
-            raise
+            if not call_data.get(ATTR_RETURN_ON_ERROR):
+                raise
 
         else:
             event_data[ATTR_COMMENT] = "Indications submitted successfully"
             event_data[ATTR_SUCCESS] = True
 
         finally:
-            self._fire_callback_event(
-                call_data,
-                event_data,
-                DOMAIN + "_" + SERVICE_PUSH_INDICATIONS,
+            # Deprecated, will be removed in 2025.7.0
+            self.hass.bus.async_fire(
+                event_type=DOMAIN + "_" + SERVICE_PUSH_INDICATIONS,
+                event_data=event_data,
             )
 
             _LOGGER.info("End handling indications submission")
 
-        await self.coordinator.async_request_refresh()
+        try:
+            await self.coordinator.async_request_refresh()
+        except asyncio.CancelledError:
+            raise
+        except BaseException as exc:
+            self.logger.warning(
+                "Error occurred after attempting to schedule update: %s", exc
+            )
+
+        return event_data
 
     async def async_service_remove_last_indication(self, **call_data):
         pass

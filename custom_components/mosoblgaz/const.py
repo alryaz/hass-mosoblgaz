@@ -38,6 +38,7 @@ ATTR_CALL_PARAMS: Final = "call_params"
 ATTR_INDICATION: Final = "indication"
 ATTR_IGNORE_INDICATIONS: Final = "ignore_indications"
 ATTR_INCREMENTAL: Final = "incremental"
+ATTR_RETURN_ON_ERROR: Final = "return_on_error"
 
 # Contract attributes
 ATTR_ADDRESS: Final = "address"
