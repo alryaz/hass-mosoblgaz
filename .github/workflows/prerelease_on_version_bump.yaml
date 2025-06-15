@@ -1,0 +1,147 @@
+name: Prerelease on Version Bump
+
+on:
+  push:
+    paths:
+      - 'custom_components/*/manifest.json'
+
+jobs:
+  pre-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetch all history for all tags and branches
+
+      - name: Detect single custom component directory
+        id: detect_integration
+        run: |
+          DIR_COUNT=$(find custom_components/* -maxdepth 0 -type d | wc -l)
+          if [ "$DIR_COUNT" -ne "1" ]; then
+            echo "Error: There must be exactly one custom component directory." >&2
+            exit 1
+          fi
+          INTEGRATION_DOMAIN=$(basename $(find custom_components/* -maxdepth 0 -type d))
+          if [ -z "$INTEGRATION_DOMAIN" ]; then
+            echo "Error: Could not detect integration domain." >&2
+            exit 1
+          fi
+          echo "INTEGRATION_DOMAIN=$INTEGRATION_DOMAIN" >> $GITHUB_ENV
+
+      - name: Install JQ
+        run: sudo apt-get install jq
+
+      - name: Extract version from current commit
+        id: current_version
+        run: echo "CURRENT_VERSION=$(jq -r '.version' custom_components/${{ env.INTEGRATION_DOMAIN }}/manifest.json)" >> $GITHUB_ENV
+
+      - name: Extract version from previous commit
+        id: previous_version
+        run: echo "PREVIOUS_VERSION=$(git show HEAD~:custom_components/${{ env.INTEGRATION_DOMAIN }}/manifest.json | jq -r '.version')" >> $GITHUB_ENV
+
+      - name: Collect Changes
+        if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
+        id: collect_changes
+        run: |
+          PREVIOUS_TAG=$(git rev-list -n 1 v${{ env.PREVIOUS_VERSION }})
+          CURRENT_SHA=${{ github.sha }}
+          if [ -z "$PREVIOUS_TAG" ]; then
+            # Fallback in case there's no previous tag
+            CHANGELOG=$(git log --pretty=format:"%s%n%b" $(git rev-list --max-parents=0 HEAD)..$CURRENT_SHA)
+          else
+            CHANGELOG=$(git log --pretty=format:"%s%n%b" $PREVIOUS_TAG..$CURRENT_SHA)
+          fi
+          
+          # Initialize section variables
+          ALL_FEATURES=""
+          ALL_FIXES=""
+          ALL_CHANGES=""
+          ALL_OTHER=""
+
+          # Process each commit message
+          echo "Processing changelog"
+          while IFS= read -r line; do
+            if [[ "$line" == "feat"* ]]; then
+              echo "Adding features line: $line"
+              ALL_FEATURES+="- $line\n"
+            elif [[ "$line" == "fix"* ]]; then
+              echo "Adding fixes line: $line"
+              ALL_FIXES+="- $line\n"
+            elif [[ "$line" == "refactor"* ]]; then
+              echo "Adding changes line: $line"
+              ALL_CHANGES+="- $line\n"
+            elif [[ ! -z "$line" ]]; then
+              echo "Adding others line: $line"
+              ALL_OTHER+="- $line\n"
+            fi
+          done <<< "$CHANGELOG"
+
+          # Start with an empty formatted changelog
+          CHANGELOG=""
+
+          # Add sections if not empty
+          if [[ ! -z "${ALL_FEATURES}" ]]; then
+            CHANGELOG="${CHANGELOG}## :new: Нововведения\n\n${ALL_FEATURES}\n"
+          fi
+          if [[ ! -z "${ALL_FIXES}" ]]; then
+            CHANGELOG="${CHANGELOG}## :bug: Исправления\n\n${ALL_FIXES}\n"
+          fi
+          if [[ ! -z "${ALL_CHANGES}" ]]; then
+            CHANGELOG="${CHANGELOG}## :wrench: Изменения\n\n${ALL_CHANGES}\n"
+          fi
+          if [[ ! -z "${ALL_OTHER}" ]]; then
+            CHANGELOG="${CHANGELOG}## :information_source: Примечания\n\n${ALL_OTHER}\n"
+          fi
+          
+          # Clean up changelog
+          CHANGELOG="$(echo -e $CHANGELOG | sed -E 's/^- (feat|refactor|fix|chore)(\([^)]+\))?:\s*/- /g')"
+          
+          echo "Resulting changelog:"
+          echo "$CHANGELOG"
+
+          # Save to GITHUB_ENV
+          {
+            echo 'CHANGELOG<<EOF'
+            echo -e "$CHANGELOG" | sed '$d'
+            echo 'EOF'
+          } >> $GITHUB_ENV
+
+      - name: Delete Release (if exists)
+        if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
+        run: gh release delete "v${{ env.CURRENT_VERSION }}" --cleanup-tag
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Pre-release
+        if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {CHANGELOG, CURRENT_VERSION} = process.env;
+            github.rest.repos.createRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: `v${CURRENT_VERSION}`,
+              name: `v${CURRENT_VERSION}`,
+              body: `${CHANGELOG}`,
+              draft: false,
+              prerelease: true,
+            });
+
+      - name: Compress component directory
+        if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
+        run: |
+          cd custom_components/${{ env.INTEGRATION_DOMAIN }}
+          zip release.zip -r ./
+
+      - name: Upload zip to release
+        if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
+        uses: svenstaro/upload-release-action@2.9.0
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: ./custom_components/${{ env.INTEGRATION_DOMAIN }}/release.zip
+          asset_name: ${{ env.INTEGRATION_DOMAIN }}.zip
+          tag: v${{ env.CURRENT_VERSION }}
+          overwrite: true
