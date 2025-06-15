@@ -8,10 +8,6 @@ CONF_GRAPHQL_TOKEN: Final = "graphql_token"
 CONF_INVERT_INVOICES: Final = "invert_invoices"
 
 DOMAIN: Final = "mosoblgaz"
-DATA_CONFIG: Final = DOMAIN + "_config"
-DATA_API_OBJECTS: Final = DOMAIN + "_api_objects"
-DATA_ENTITIES: Final = DOMAIN + "_entities"
-DATA_UPDATERS: Final = DOMAIN + "_updaters"
 
 DEFAULT_SCAN_INTERVAL: Final = 60 * 60  # 1 hour
 DEFAULT_TIMEOUT: Final = 30  # 30 seconds
