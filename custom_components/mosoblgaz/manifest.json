@@ -11,5 +11,5 @@
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/alryaz/hass-mosoblgaz/issues",
     "requirements": [],
-    "version": "2025.6.4b7"
+    "version": "2025.6.4"
 }
