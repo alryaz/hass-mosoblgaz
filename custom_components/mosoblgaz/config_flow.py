@@ -99,7 +99,7 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         """Route based on the required of the temporary token presence."""
 
         # Handle input coming from reauth entry
-        self._api = MosoblgazAPI("", "", async_get_clientsession())
+        self._api = MosoblgazAPI("", "", async_get_clientsession(self.hass))
 
         _LOGGER.info("Showing user step")
 
