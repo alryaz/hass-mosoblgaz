@@ -388,7 +388,7 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
         if meter is None:
             raise Exception("Meter is unavailable")
 
-        event_data = {}
+        event_data = {ATTR_SUCCESS: False}
 
         try:
             indications = self._get_real_indications(meter, call_data)
@@ -418,10 +418,6 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
             event_data[ATTR_COMMENT] = "Indications submitted successfully"
             event_data[ATTR_SUCCESS] = True
 
-            # @TODO: this looks weird, but this is how the component was made
-            await self.async_update_bound_account()
-            self.async_schedule_update_ha_state(force_refresh=True)
-
         finally:
             self._fire_callback_event(
                 call_data,
@@ -430,6 +426,8 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
             )
 
             _LOGGER.info("End handling indications submission")
+
+        await self.coordinator.async_request_refresh()
 
     async def async_service_remove_last_indication(self, **call_data):
         pass
