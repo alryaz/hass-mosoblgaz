@@ -180,7 +180,7 @@ class MosoblgazBaseSensor(MosoblgazCoordinatorEntity, SensorEntity, ABC):
             )
             self._attr_available = True
             await self._handle_contract_update()
-        return super()._handle_coordinator_update()
+        return await super()._handle_coordinator_update()
 
 
 class MosoblgazContractSensor(MosoblgazBaseSensor):
