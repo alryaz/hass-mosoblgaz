@@ -77,14 +77,14 @@
                     "period": {
                         "name": "Period"
                     },
-                    "previous_payments_count": {
-                        "name": "Previous payments count"
-                    },
                     "previous_balance": {
                         "name": "Previous balance"
                     },
                     "previous_paid": {
                         "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
                     },
                     "previous_period": {
                         "name": "Previous period"
@@ -118,14 +118,14 @@
                     "period": {
                         "name": "Period"
                     },
-                    "previous_payments_count": {
-                        "name": "Previous payments count"
-                    },
                     "previous_balance": {
                         "name": "Previous balance"
                     },
                     "previous_paid": {
                         "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
                     },
                     "previous_period": {
                         "name": "Previous period"
@@ -159,14 +159,14 @@
                     "period": {
                         "name": "Period"
                     },
-                    "previous_payments_count": {
-                        "name": "Previous payments count"
-                    },
                     "previous_balance": {
                         "name": "Previous balance"
                     },
                     "previous_paid": {
                         "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
                     },
                     "previous_period": {
                         "name": "Previous period"
@@ -200,14 +200,14 @@
                     "period": {
                         "name": "Period"
                     },
-                    "previous_payments_count": {
-                        "name": "Previous payments count"
-                    },
                     "previous_balance": {
                         "name": "Previous balance"
                     },
                     "previous_paid": {
                         "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
                     },
                     "previous_period": {
                         "name": "Previous period"
@@ -241,14 +241,14 @@
                     "period": {
                         "name": "Period"
                     },
-                    "previous_payments_count": {
-                        "name": "Previous payments count"
-                    },
                     "previous_balance": {
                         "name": "Previous balance"
                     },
                     "previous_paid": {
                         "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
                     },
                     "previous_period": {
                         "name": "Previous period"
@@ -272,6 +272,26 @@
                     "timeout": "Timeout of requests to the server (in seconds)"
                 }
             }
+        }
+    },
+    "services": {
+        "push_indications": {
+            "description": "A service for submitting gas meter readings to the Mosoblgaz system",
+            "fields": {
+                "ignore_indications": {
+                    "description": "Skip validation limits when submitting readings",
+                    "name": "Ignore limits"
+                },
+                "incremental": {
+                    "description": "Add submitted readings to previously known values",
+                    "name": "Add to known"
+                },
+                "indications": {
+                    "description": "Gas meter values to be submitted",
+                    "name": "Readings"
+                }
+            },
+            "name": "Push indications to Mosoblgaz"
         }
     }
 }
