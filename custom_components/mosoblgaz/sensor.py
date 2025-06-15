@@ -94,14 +94,14 @@ async def async_setup_entry(
     known_group_codes = set(MosoblgazInvoiceSensor.GROUP_ICONS)
 
     # Iterate over fetched contracts
-    for contract_id, contract in coordinator.data.items():
+    for contract in coordinator.data.values():
         # Add contract sensor
         new_entities.append(MosoblgazContractSensor(coordinator, contract))
 
-        for meter in contract.meters.items():
+        for meter in contract.meters.values():
             new_entities.append(MosoblgazMeterSensor(coordinator, meter))
 
-        for device_id, device in contract.devices.items():
+        for  device in contract.devices.values():
             if device.is_archived:
                 continue
             if not device.is_active:
