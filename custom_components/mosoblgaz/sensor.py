@@ -538,8 +538,6 @@ class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
         )
 
         # @TODO: convert this to programmatic evaluation
-        should_invert_state = False
-
         last_invoice = sorted_invoices[0]
         attributes[ATTR_PERIOD] = last_invoice.period.isoformat()
         attributes[ATTR_TOTAL] = last_invoice.total
@@ -549,7 +547,7 @@ class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
 
         # Update state
         state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
-        if should_invert_state:
+        if self.coordinator.should_invert_invoices:
             state_value *= -1
 
         state_value = round(state_value, 2)

@@ -14,6 +14,7 @@ __all__ = [
 ]
 
 import asyncio
+from functools import cached_property
 import logging
 from aiohttp import ClientTimeout
 import voluptuous as vol
@@ -121,6 +122,13 @@ class MosoblgazUpdateCoordinator(DataUpdateCoordinator[dict[str, Contract]]):
     ) -> None:
         self.api = api
         super().__init__(hass, logger, name=DOMAIN, update_interval=update_interval)
+
+    @cached_property
+    def should_invert_invoices(self) -> bool:
+        try:
+            return self.config_entry.options[CONF_INVERT_INVOICES]
+        except (AttributeError, KeyError):
+            return DEFAULT_INVERT_INVOICES
 
     async def _async_update_data(self) -> dict[str, Contract]:
         if self.api.graphql_token:

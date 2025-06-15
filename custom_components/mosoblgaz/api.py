@@ -1203,7 +1203,7 @@ class Invoice:
     @property
     def paid(self) -> float:
         """Paid amount (if available)"""
-        return round(float(self._data.get("paid") or 0.0), 2)
+        return round(float(self._data.get("payment") or 0.0), 2)
 
     @property
     def payments(self) -> list["Payment"]:

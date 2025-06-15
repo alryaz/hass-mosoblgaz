@@ -294,13 +294,10 @@ class MosoblgazOptionsFlowHandler(OptionsFlow):
         :return: Flow response
         """
         if user_input is not None:
-            _LOGGER.debug(f"{self.log_prefix} Saving options: {user_input}")
             return self.async_create_entry(title="", data=user_input)
         else:
             # Use default options
             user_input = self.config_entry.options
-
-        _LOGGER.debug(f"{self.log_prefix} Showing options form for GUI configuration")
 
         return self.async_show_form(
             step_id="user",
