@@ -1,6 +1,7 @@
 """Simplistic implementation of interaction with Mosoblgaz API"""
 
 import asyncio
+from enum import IntEnum, nonmember
 import json
 import logging
 import re
@@ -43,9 +44,11 @@ def today_blackout(
     return blackout_start <= check <= blackout_end
 
 
-class ClassCodes:
+class ClassCodes(IntEnum):
     UNKNOWN = -1
-    METERS = [10100, 10101, 10102]
+    METER_FIRST = 10100
+    METER_SECOND = 10101
+    METER_THIRD = 10102
     STOVE = 102
     HEATER = 103
     BOILER = 104
@@ -55,6 +58,9 @@ class ClassCodes:
     INDOOR_PIPELINE = 203
     SECURITY_DEVICE = 204
     CONNECTION_VALVE = 206
+    REGULATOR = 401
+
+    METERS = nonmember(frozenset((METER_FIRST, METER_SECOND, METER_THIRD)))
 
 
 class Queries:
@@ -1037,7 +1043,7 @@ class Device:
             return list(ClassCodes.__dict__.keys())[
                 list(ClassCodes.__dict__.values()).index(self.device_class_code)
             ].lower()
-        except IndexError:
+        except (IndexError, ValueError):
             return None
 
     @property
