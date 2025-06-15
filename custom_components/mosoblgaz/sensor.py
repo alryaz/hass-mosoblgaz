@@ -155,16 +155,16 @@ class MosoblgazBaseSensor(MosoblgazCoordinatorEntity, SensorEntity, ABC):
         # Since our platform refreshes first,
         # apply data to entities on launch
         # @TODO: check for FOUCs
-        await self._handle_coordinator_update()
+        self._handle_coordinator_update()
 
-    async def _handle_contract_update(self) -> None:
+    def _handle_contract_update(self) -> None:
         """Handle when contract data is updated"""
 
-    async def _handle_contract_missing(self) -> None:
+    def _handle_contract_missing(self) -> None:
         """Handle when contract data is missing"""
 
     @final
-    async def _handle_coordinator_update(self):
+    def _handle_coordinator_update(self):
         """Handle contract data retrieval"""
         try:
             self.contract = self.coordinator.data[self.contract.contract_id]
@@ -173,14 +173,15 @@ class MosoblgazBaseSensor(MosoblgazCoordinatorEntity, SensorEntity, ABC):
                 "Entity %s has no contract to update with", self.entity_id
             )
             self._attr_available = False
-            await self._handle_contract_missing()
+            self._handle_contract_missing()
         else:
             self.logger.debug(
                 "Entity %s updates with matching contract", self.entity_id
             )
             self._attr_available = True
-            await self._handle_contract_update()
-        return await super()._handle_coordinator_update()
+            self._handle_contract_update()
+        # Run coordinator update from the Home Assistantclass
+        return super()._handle_coordinator_update()
 
 
 class MosoblgazContractSensor(MosoblgazBaseSensor):
@@ -198,7 +199,7 @@ class MosoblgazContractSensor(MosoblgazBaseSensor):
         self._attr_unique_id = "contract_{}".format(contract.contract_id)
         self._attr_native_value = 0.0
 
-    async def _handle_contract_update(self):
+    def _handle_contract_update(self):
         self._attr_native_value = self.contract.balance
         self._attr_extra_state_attributes.update(
             {
@@ -229,25 +230,25 @@ class MosoblgazBaseDeviceSensor(MosoblgazBaseSensor, Generic[_TDevice]):
             via_device=(DOMAIN, "contract_{}".format(device.contract.contract_id)),
         )
 
-    async def _handle_device_update(self):
+    def _handle_device_update(self):
         """Handle when device data is updated"""
 
-    async def _handle_device_missing(self):
+    def _handle_device_missing(self):
         """Handle when device data is missing"""
 
     @final
-    async def _handle_contract_update(self):
+    def _handle_contract_update(self):
         """Handle contract data retrieval"""
         try:
             self.device = self.contract.devices[self.device.device_id]
         except KeyError:
             self.logger.debug("Entity %s has no device to update with", self.entity_id)
             self._attr_available = False
-            await self._handle_device_missing()
+            self._handle_device_missing()
         else:
             self.logger.debug("Entity %s updates with matching device", self.entity_id)
             self._attr_available = True
-            await self._handle_device_update()
+            self._handle_device_update()
 
 
 class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
@@ -297,7 +298,7 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
             (FEATURE_PUSH_INDICATIONS,),
         )
 
-    async def _handle_device_update(self):
+    def _handle_device_update(self):
         """Extrapolate data for meter"""
         if history_entry := self.device.last_history_entry:
             self._attr_native_value = history_entry.value
@@ -452,7 +453,7 @@ class MosoblgazDeviceEOLSensor(MosoblgazBaseDeviceSensor[Device]):
             }
         )
 
-    async def _handle_device_update(self):
+    def _handle_device_update(self):
         eol_date = self.device.end_of_life_date
         self._attr_native_value = eol_date
         self._attr_icon = (
@@ -520,7 +521,7 @@ class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
         ):
             self._attr_extra_state_attributes[key] = None
 
-    async def _handle_contract_update(self):
+    def _handle_contract_update(self):
         """The update method"""
         attributes = self._attr_extra_state_attributes
 
