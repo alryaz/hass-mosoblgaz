@@ -36,6 +36,23 @@
     },
     "entity": {
         "sensor": {
+            "contract": {
+                "name": "Баланс",
+                "state_attributes": {
+                    "address": {
+                        "name": "Адрес объекта"
+                    },
+                    "contract_code": {
+                        "name": "Код договора"
+                    },
+                    "department": {
+                        "name": "Обслуживающий филиал"
+                    },
+                    "person": {
+                        "name": "Зарегистрирован на"
+                    }
+                }
+            },
             "device_eol": {
                 "name": "Дата конца эксплуатации"
             },

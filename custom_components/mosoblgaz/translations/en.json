@@ -36,6 +36,23 @@
     },
     "entity": {
         "sensor": {
+            "contract": {
+                "name": "Balance",
+                "state_attributes": {
+                    "address": {
+                        "name": "Address"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "department": {
+                        "name": "Department"
+                    },
+                    "person": {
+                        "name": "Consumer"
+                    }
+                }
+            },
             "device_eol": {
                 "name": "End-of-Life date"
             },

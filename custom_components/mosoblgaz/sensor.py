@@ -189,6 +189,7 @@ class MosoblgazContractSensor(MosoblgazBaseSensor):
     _attr_icon: str = "mdi:file-document-edit"
     _attr_device_class: SensorDeviceClass = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement: str = RUB_CURRENCY
+    _attr_translation_key: str = "contract"
 
     def __init__(self, coordinator: MosoblgazUpdateCoordinator, contract: Contract):
         super().__init__(coordinator, contract)
