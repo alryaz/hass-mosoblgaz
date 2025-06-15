@@ -221,43 +221,31 @@
                 }
             },
             "meter": {
-                "name": "Gas utilization",
+                "name": "Gas Consumption",
                 "state_attributes": {
-                    "balance": {
-                        "name": "Balance"
+                    "collected_at": {
+                        "name": "Collection Date"
                     },
                     "contract_code": {
-                        "name": "Contract code"
+                        "name": "Contract Code"
                     },
-                    "invoice_group": {
-                        "name": "Invoice group"
+                    "last_charged": {
+                        "name": "Last Charged Amount"
                     },
-                    "paid": {
-                        "name": "Paid"
+                    "last_cost": {
+                        "name": "Last Unit Cost"
                     },
-                    "payments_count": {
-                        "name": "Payments count"
+                    "last_value": {
+                        "name": "Last Reading"
                     },
-                    "period": {
-                        "name": "Period"
+                    "meter_code": {
+                        "name": "Meter Code"
                     },
-                    "previous_balance": {
-                        "name": "Previous balance"
+                    "previous_value": {
+                        "name": "Previous Reading"
                     },
-                    "previous_paid": {
-                        "name": "Previous paid"
-                    },
-                    "previous_payments_count": {
-                        "name": "Previous payments count"
-                    },
-                    "previous_period": {
-                        "name": "Previous period"
-                    },
-                    "previous_total": {
-                        "name": "Previous total"
-                    },
-                    "total": {
-                        "name": "Total"
+                    "serial": {
+                        "name": "Serial Number"
                     }
                 }
             }

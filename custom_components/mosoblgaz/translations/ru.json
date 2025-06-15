@@ -223,41 +223,29 @@
             "meter": {
                 "name": "Потребление газа",
                 "state_attributes": {
-                    "balance": {
-                        "name": "Баланс"
+                    "collected_at": {
+                        "name": "Дата сбора"
                     },
                     "contract_code": {
                         "name": "Код договора"
                     },
-                    "invoice_group": {
-                        "name": "Группа счета"
+                    "last_charged": {
+                        "name": "Последняя сумма к оплате"
                     },
-                    "paid": {
-                        "name": "Оплачено"
+                    "last_cost": {
+                        "name": "Последняя стоимость за единицу"
                     },
-                    "payments_count": {
-                        "name": "Количество платежей"
+                    "last_value": {
+                        "name": "Последнее показание"
                     },
-                    "period": {
-                        "name": "Период"
+                    "meter_code": {
+                        "name": "Код счетчика"
                     },
-                    "previous_balance": {
-                        "name": "Предыдущий баланс"
+                    "previous_value": {
+                        "name": "Предыдущее показание"
                     },
-                    "previous_paid": {
-                        "name": "Предыдущие платежи"
-                    },
-                    "previous_payments_count": {
-                        "name": "Кол-во предыдущих платежей"
-                    },
-                    "previous_period": {
-                        "name": "Предыдущий период"
-                    },
-                    "previous_total": {
-                        "name": "Предыдущая сумма"
-                    },
-                    "total": {
-                        "name": "Начислено"
+                    "serial": {
+                        "name": "Серийный номер"
                     }
                 }
             }
