@@ -75,6 +75,9 @@ jobs:
               echo "Adding changes line: $line"
               ALL_CHANGES+="- $line\n"
             elif [[ ! -z "$line" ]]; then
+              if [[ "$line" == "chore: bump"* ]]; then
+                continue
+              fi
               echo "Adding others line: $line"
               ALL_OTHER+="- $line\n"
             fi
