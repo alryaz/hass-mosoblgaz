@@ -1,0 +1,289 @@
+{
+    "config": {
+        "error": {
+            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log.",
+            "invalid_credentials": "Invalid username or password.",
+            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later."
+        },
+        "step": {
+            "with_captcha": {
+                "data": {
+                    "captcha": "CAPTCHA",
+                    "password": "Password",
+                    "username": "Username"
+                },
+                "description": "Enter your login details for your Mosoblgaz account.\n\nPopulate the CAPTCHA text field with the text displayed on the image below:\n![{captcha_token}]({captcha_url})\n_Hint: Leave the field empty to refresh captcha._",
+                "title": "Mosoblgaz Login"
+            },
+            "without_captcha": {
+                "data": {
+                    "password": "Password",
+                    "username": "Username"
+                },
+                "description": "Enter your login details for your Mosoblgaz account.",
+                "title": "Mosoblgaz Login"
+            }
+        },
+        "title": "Mosoblgaz"
+    },
+    "device": {
+        "contract": {
+            "name": "Contract {contract_code}"
+        },
+        "device": {
+            "name": "{model}"
+        }
+    },
+    "entity": {
+        "sensor": {
+            "contract": {
+                "name": "Balance",
+                "state_attributes": {
+                    "address": {
+                        "name": "Address"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "department": {
+                        "name": "Department"
+                    },
+                    "person": {
+                        "name": "Consumer"
+                    }
+                }
+            },
+            "device_eol": {
+                "name": "End-of-Life date"
+            },
+            "invoice": {
+                "name": "{group_code} invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "invoice_gas": {
+                "name": "Gas utilization invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "invoice_tech": {
+                "name": "Technical support invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "invoice_vdgo": {
+                "name": "Equipment servicing invoice",
+                "state_attributes": {
+                    "balance": {
+                        "name": "Balance"
+                    },
+                    "contract_code": {
+                        "name": "Contract code"
+                    },
+                    "invoice_group": {
+                        "name": "Invoice group"
+                    },
+                    "paid": {
+                        "name": "Paid"
+                    },
+                    "payments_count": {
+                        "name": "Payments count"
+                    },
+                    "period": {
+                        "name": "Period"
+                    },
+                    "previous_balance": {
+                        "name": "Previous balance"
+                    },
+                    "previous_paid": {
+                        "name": "Previous paid"
+                    },
+                    "previous_payments_count": {
+                        "name": "Previous payments count"
+                    },
+                    "previous_period": {
+                        "name": "Previous period"
+                    },
+                    "previous_total": {
+                        "name": "Previous total"
+                    },
+                    "total": {
+                        "name": "Total"
+                    }
+                }
+            },
+            "meter": {
+                "name": "Gas Consumption",
+                "state_attributes": {
+                    "collected_at": {
+                        "name": "Collection Date"
+                    },
+                    "contract_code": {
+                        "name": "Contract Code"
+                    },
+                    "last_charged": {
+                        "name": "Last Charged Amount"
+                    },
+                    "last_cost": {
+                        "name": "Last Unit Cost"
+                    },
+                    "last_value": {
+                        "name": "Last Reading"
+                    },
+                    "meter_code": {
+                        "name": "Meter Code"
+                    },
+                    "previous_value": {
+                        "name": "Previous Reading"
+                    },
+                    "serial": {
+                        "name": "Serial Number"
+                    }
+                }
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "user": {
+                "data": {
+                    "invert_invoices": "Show positive invoice surplus",
+                    "scan_interval": "Update interval (in seconds)",
+                    "timeout": "Timeout of requests to the server (in seconds)"
+                }
+            }
+        }
+    },
+    "services": {
+        "push_indications": {
+            "description": "A service for submitting gas meter readings to the Mosoblgaz system",
+            "fields": {
+                "ignore_indications": {
+                    "description": "Skip validation limits when submitting readings",
+                    "name": "Ignore limits"
+                },
+                "incremental": {
+                    "description": "Add submitted readings to previously known values",
+                    "name": "Add to known"
+                },
+                "indications": {
+                    "description": "Gas meter values to be submitted",
+                    "name": "Readings"
+                },
+                "return_on_error": {
+                    "description": "Return the result dictionary even if an error occurred",
+                    "name": "Return on error"
+                }
+            },
+            "name": "Push indications to Mosoblgaz"
+        }
+    }
+}
