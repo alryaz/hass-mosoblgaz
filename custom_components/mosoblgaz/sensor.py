@@ -191,6 +191,7 @@ class MosoblgazContractSensor(MosoblgazBaseSensor):
     _attr_device_class: SensorDeviceClass = SensorDeviceClass.MONETARY
     _attr_native_unit_of_measurement: str = RUB_CURRENCY
     _attr_translation_key: str = "contract"
+    _attr_suggested_display_precision: int = 2
 
     def __init__(self, coordinator: MosoblgazUpdateCoordinator, contract: Contract):
         super().__init__(coordinator, contract)
@@ -261,6 +262,7 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
     _attr_state_class: str = SensorStateClass.TOTAL_INCREASING
     _attr_native_value: int | float = 0
     _attr_translation_key: str = "meter"
+    _attr_suggested_display_precision: int = 0
 
     def __init__(self, coordinator, device: Meter):
         super().__init__(coordinator, device)
@@ -472,6 +474,7 @@ class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
     _attr_native_unit_of_measurement = RUB_CURRENCY
     _attr_device_class = SensorDeviceClass.MONETARY
     _attr_translation_key = "invoice"
+    _attr_suggested_display_precision = 2
 
     GROUP_ICONS = {
         INVOICE_GROUP_VDGO: "mdi:progress-wrench",
@@ -551,8 +554,6 @@ class MosoblgazInvoiceSensor(MosoblgazBaseSensor):
         state_value = last_invoice.paid + last_invoice.balance - last_invoice.total
         if self.coordinator.should_invert_invoices:
             state_value *= -1
-
-        state_value = round(state_value, 2)
 
         if state_value == 0:
             # while this looks weird, it gets rid of a useless negative sign
