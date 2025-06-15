@@ -4,10 +4,10 @@ Retrieves values regarding current state of contracts.
 """
 
 from abc import ABC
+from datetime import date
 import logging
 from typing import Any, Generic, Mapping, TypeVar, Union, final
 
-from dateutil.utils import today
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -459,7 +459,7 @@ class MosoblgazDeviceEOLSensor(MosoblgazBaseDeviceSensor[Device]):
             if eol_date is None
             else (
                 "mdi:calendar-alert"
-                if eol_date <= today().date()
+                if eol_date <= date.today()
                 else "mdi:calendar-check"
             )
         )
