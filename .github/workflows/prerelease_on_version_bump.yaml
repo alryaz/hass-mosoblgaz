@@ -41,7 +41,7 @@ jobs:
       - name: Extract version from previous commit
         id: previous_version
         run: |
-          echo "PREVIOUS_VERSION=$(git describe --abbrev=0 --tags `git rev-list --tags --skip=1` 2>/dev/null | sort -r | uniq | head -n1)" >> $GITHUB_ENV
+          echo "PREVIOUS_VERSION=$(git describe --abbrev=0 --tags `git rev-list --tags` 2>/dev/null | sort -r | uniq | head -n1)" >> $GITHUB_ENV
 
       - name: Collect Changes
         if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
