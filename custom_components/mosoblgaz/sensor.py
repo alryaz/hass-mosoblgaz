@@ -455,7 +455,7 @@ class MosoblgazDeviceEOLSensor(MosoblgazBaseDeviceSensor[Device]):
         eol_date = self.device.end_of_life_date
         self._attr_native_value = eol_date
         self._attr_icon = (
-            self.__class__._attr_icon
+            "mdi:calendar-blank"
             if eol_date is None
             else (
                 "mdi:calendar-alert"
