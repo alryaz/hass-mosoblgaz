@@ -197,7 +197,7 @@ class MosoblgazContractSensor(MosoblgazBaseSensor):
         self._attr_unique_id = "contract_{}".format(contract.contract_id)
         self._attr_native_value = 0.0
 
-    async def _handle_coordinator_update(self):
+    async def _handle_contract_update(self):
         self._attr_native_value = self.contract.balance
         self._attr_extra_state_attributes.update(
             {
