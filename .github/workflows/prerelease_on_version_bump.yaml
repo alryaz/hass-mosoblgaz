@@ -38,13 +38,14 @@ jobs:
 
       - name: Extract version from previous commit
         id: previous_version
-        run: echo "PREVIOUS_VERSION=$(git show HEAD~:custom_components/${{ env.INTEGRATION_DOMAIN }}/manifest.json | jq -r '.version')" >> $GITHUB_ENV
+        run: |
+          echo "PREVIOUS_VERSION=$(git describe --abbrev=0 --tags `git rev-list --tags --skip=1` 2>/dev/null | sort -r | uniq | head -n1)" >> $GITHUB_ENV
 
       - name: Collect Changes
         if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
         id: collect_changes
         run: |
-          PREVIOUS_TAG=$(git rev-list -n 1 v${{ env.PREVIOUS_VERSION }})
+          PREVIOUS_TAG=${{ env.PREVIOUS_VERSION }}
           CURRENT_SHA=${{ github.sha }}
           if [ -z "$PREVIOUS_TAG" ]; then
             # Fallback in case there's no previous tag
