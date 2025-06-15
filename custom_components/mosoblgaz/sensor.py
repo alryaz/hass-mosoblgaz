@@ -5,8 +5,9 @@ Retrieves values regarding current state of contracts.
 
 from abc import ABC
 import logging
-from typing import Any, Mapping, Union, final
+from typing import Any, Generic, Mapping, TypeVar, Union, final
 
+from dateutil.utils import today
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -17,7 +18,7 @@ from homeassistant.components.sensor import (
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import ATTR_ENTITY_ID, UnitOfVolume
+from homeassistant.const import ATTR_ENTITY_ID, ATTR_MODEL, EntityCategory, UnitOfVolume
 from homeassistant.core import HomeAssistant
 
 from custom_components.mosoblgaz import (
@@ -30,6 +31,7 @@ from custom_components.mosoblgaz.api import (
     INVOICE_GROUP_GAS,
     INVOICE_GROUP_TECH,
     INVOICE_GROUP_VDGO,
+    Device,
     Meter,
     MosoblgazException,
 )
@@ -100,7 +102,14 @@ async def async_setup_entry(
         new_entities.append(MosoblgazContractSensor(coordinator, contract))
 
         for meter_id, meter in contract.meters.items():
-            new_entities.append(MosoblgazMeterSensor(coordinator, contract, meter))
+            new_entities.append(MosoblgazMeterSensor(coordinator, meter))
+
+        for device_id, device in contract.devices.items():
+            if device.is_archived:
+                continue
+            if not device.is_active:
+                continue
+            new_entities.append(MosoblgazDeviceEOLSensor(coordinator, device))
 
         fetched_group_codes = contract.all_invoices_by_groups.keys()
         new_group_codes.update(fetched_group_codes - known_group_codes)
@@ -125,8 +134,8 @@ class MosoblgazBaseSensor(MosoblgazCoordinatorEntity, SensorEntity, ABC):
         coordinator: MosoblgazUpdateCoordinator,
         contract: Contract,
     ) -> None:
-        super().__init__(coordinator)
         self.contract: Contract = contract
+        super().__init__(coordinator)
 
         # Set initial attributes
         attrs = {ATTR_CONTRACT_CODE: contract.contract_id}
@@ -199,7 +208,48 @@ class MosoblgazContractSensor(MosoblgazBaseSensor):
         )
 
 
-class MosoblgazMeterSensor(MosoblgazBaseSensor):
+_TDevice = TypeVar("_TDevice", bound=Device)
+
+
+class MosoblgazBaseDeviceSensor(MosoblgazBaseSensor, Generic[_TDevice]):
+    def __init__(self, coordinator, device: _TDevice):
+        self.device: _TDevice = device
+        super().__init__(coordinator, device.contract)
+
+        # Set initial attributes
+        self._attr_device_info = DeviceInfo(
+            translation_key="device",
+            translation_placeholders={ATTR_MODEL: device.model},
+            model=device.model,
+            manufacturer=device.manufacturer,
+            model_id=device.device_class_code,
+            serial_number=device.serial,
+            identifiers={(DOMAIN, "device_{}".format(device.device_id))},
+            via_device=(DOMAIN, "contract_{}".format(device.contract.contract_id)),
+        )
+
+    async def _handle_device_update(self):
+        """Handle when device data is updated"""
+
+    async def _handle_device_missing(self):
+        """Handle when device data is missing"""
+
+    @final
+    async def _handle_contract_update(self):
+        """Handle contract data retrieval"""
+        try:
+            self.device = self.contract.devices[self.device.device_id]
+        except KeyError:
+            self.logger.debug("Entity %s has no device to update with", self.entity_id)
+            self._attr_available = False
+            await self._handle_device_missing()
+        else:
+            self.logger.debug("Entity %s updates with matching device", self.entity_id)
+            self._attr_available = True
+            await self._handle_device_update()
+
+
+class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
     """The class for this sensor"""
 
     _attr_icon: str = "mdi:counter"
@@ -210,26 +260,21 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
     _attr_native_value: int | float = 0
     _attr_translation_key: str = "meter"
 
-    def __init__(self, coordinator, contract, meter: Meter):
-        super().__init__(coordinator, contract)
-        self._meter = meter
+    def __init__(self, coordinator, device: Meter):
+        super().__init__(coordinator, device)
 
         # Set initial attributes
-        self._attr_unique_id = "meter_{}".format(meter.device_id)
+        self._attr_unique_id = "meter_{}".format(device.device_id)
         self._attr_extra_state_attributes.update(
             {
-                ATTR_METER_CODE: self.meter.device_id,
-                ATTR_SERIAL: self.meter.serial,
+                ATTR_METER_CODE: self.device.device_id,
+                ATTR_SERIAL: self.device.serial,
             }
         )
-        self._attr_translation_placeholders = {"meter_serial": self.meter.serial}
+        self._attr_translation_placeholders = {"meter_serial": self.device.serial}
 
         # Reset extra attributes
         self._set_initial_state()
-
-    @property
-    def meter(self) -> Meter:
-        return self._meter
 
     def _set_initial_state(self):
         self._attr_native_value = 0
@@ -251,16 +296,9 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
             (FEATURE_PUSH_INDICATIONS,),
         )
 
-    async def _handle_contract_update(self):
+    async def _handle_device_update(self):
         """Extrapolate data for meter"""
-        try:
-            self.meter = self.contract.meters
-        except KeyError:
-            # @TODO: schedule removal?
-            self._attr_available = False
-            return
-
-        if history_entry := self.meter.last_history_entry:
+        if history_entry := self.device.last_history_entry:
             self._attr_native_value = history_entry.value
             self._attr_extra_state_attributes.update(
                 {
@@ -300,8 +338,8 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
             event_type=event_id,
             event_data={
                 ATTR_ENTITY_ID: self.entity_id,
-                ATTR_METER_CODE: self.meter.device_id,
-                ATTR_SERIAL: self.meter.serial,
+                ATTR_METER_CODE: self.device.device_id,
+                ATTR_SERIAL: self.device.serial,
                 ATTR_CALL_PARAMS: dict(call_data),
                 ATTR_SUCCESS: False,
                 ATTR_INDICATIONS: None,
@@ -345,7 +383,7 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
         """
         _LOGGER.info(f"{self} Begin handling indications submission")
 
-        meter = self.meter
+        meter = self.device
 
         if meter is None:
             raise Exception("Meter is unavailable")
@@ -397,14 +435,36 @@ class MosoblgazMeterSensor(MosoblgazBaseSensor):
         pass
 
 
-# class MosoblgazDeviceExpirySensor(MosoblgazBaseSensor):
-#     _attr_icon: str = "mdi:calendar-blank"
-#     _attr_device_class = SensorDeviceClass.TIMESTAMP
-#     _attr_entity_category = EntityCategory.DIAGNOSTIC
-#     _attr_translation_key = "device_service"
-#     def __init__(self, coordinator, contract, device: Device):
-#         super().__init__(coordinator, contract)
-#         self._attr_unique_id = "device_service_{}".format(device.device_id)
+class MosoblgazDeviceEOLSensor(MosoblgazBaseDeviceSensor[Device]):
+    _attr_icon: str = "mdi:calendar-blank"
+    _attr_device_class = SensorDeviceClass.DATE
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "device_eol"
+
+    def __init__(self, coordinator, device: Device):
+        super().__init__(coordinator, device)
+
+        # Set initial attributes
+        self._attr_unique_id = "device_eol_{}".format(device.device_id)
+        self._attr_extra_state_attributes.update(
+            {
+                ATTR_DEVICE_CODE: device.device_id,
+                ATTR_CLASS_NAME: device.device_class,
+            }
+        )
+
+    async def _handle_device_update(self):
+        eol_date = self.device.end_of_life_date
+        self._attr_native_value = eol_date
+        self._attr_icon = (
+            self.__class__._attr_icon
+            if eol_date is None
+            else (
+                "mdi:calendar-alert"
+                if eol_date <= today().date()
+                else "mdi:calendar-check"
+            )
+        )
 
 
 class MosoblgazInvoiceSensor(MosoblgazBaseSensor):

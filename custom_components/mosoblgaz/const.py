@@ -25,6 +25,10 @@ RUB_CURRENCY: Final = "RUB"
 # Common attributes
 ATTR_CONTRACT_CODE: Final = "contract_code"
 
+# Device attributes
+ATTR_DEVICE_CODE: Final = "device_code"
+ATTR_CLASS_NAME: Final = "class_name"
+
 # Meter attributes
 ATTR_SERIAL: Final = "serial"
 ATTR_METER_CODE: Final = "meter_code"

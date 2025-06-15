@@ -29,10 +29,16 @@
     "device": {
         "contract": {
             "name": "Договор {contract_code}"
+        },
+        "device": {
+            "name": "{model}"
         }
     },
     "entity": {
         "sensor": {
+            "device_eol": {
+                "name": "Дата конца эксплуатации"
+            },
             "invoice": {
                 "name": "Счет {group_code}",
                 "state_attributes": {

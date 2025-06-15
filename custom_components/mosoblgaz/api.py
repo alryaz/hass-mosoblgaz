@@ -221,11 +221,30 @@ class Queries:
                                         [
                                             "ID",
                                             "ClassCode",
-                                            "Model",
-                                            "DateNextCheck",
                                             "ClassName",
+                                            "Model",
+                                            "ManfFirm",
+                                            "ManfDate",
+                                            "Place",
+                                            "DateNextCheck",
                                             "ManfNo",
                                             "Status",
+                                            "IdDogovoraTOVDGO",
+                                            "Archived",
+                                            "BeginDateOff",
+                                            "OffReason",
+                                            "OffReasonId",
+                                            "MeterType",
+                                            "ExtraMeterType",
+                                            "SmartHouse",
+                                            "IsForeign",
+                                            "HeatOutput",
+                                            "ExplEndDate",
+                                            "SealDate",
+                                            "SchMountDate",
+                                            "SealNum",
+                                            "MeterMaxM3",
+                                            "GodVvoda",
                                         ],
                                     ),
                                 ],
@@ -991,8 +1010,26 @@ class Device:
         self._data = value
 
     @property
+    def is_active(self) -> bool:
+        status = self.data.get("Status")
+        return status is None or status != 1
+
+    @property
+    def is_archived(self) -> bool:
+        archived = self.data.get("Archived")
+        if archived is None:
+            return False
+        return str(archived) != "false"
+
+    @property
     def device_class_code(self) -> int:
         return int(self.data.get("ClassCode", -1))
+
+    @property
+    def end_of_life_date(self) -> date | None:
+        end_of_life_date = self.data.get("ExplEndDate")
+        if end_of_life_date:
+            return date.fromisoformat(end_of_life_date)
 
     @property
     def device_class(self) -> str | None:
@@ -1011,16 +1048,20 @@ class Device:
     def model(self) -> str:
         return self.data["Model"]
 
+    @property
+    def manufacturer(self) -> str:
+        return self.data["ManfFirm"]
+
+    @property
+    def serial(self) -> str | None:
+        return self.data.get("ManfNo")
+
 
 class Meter(Device):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._history = None
         self._last_history_period = None
-
-    @property
-    def serial(self) -> str | None:
-        return self.data.get("ManfNo")
 
     @property
     def date_next_check(self) -> date:
