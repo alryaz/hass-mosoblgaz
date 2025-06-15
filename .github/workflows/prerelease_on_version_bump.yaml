@@ -4,6 +4,8 @@ on:
   push:
     paths:
       - 'custom_components/*/manifest.json'
+  workflow_dispatch:
+    
 
 jobs:
   pre-release:
