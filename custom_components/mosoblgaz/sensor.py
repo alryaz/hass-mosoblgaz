@@ -272,8 +272,6 @@ class MosoblgazMeterSensor(MosoblgazBaseDeviceSensor[Meter]):
                 ATTR_SERIAL: self.device.serial,
             }
         )
-        self._attr_translation_placeholders = {"meter_serial": self.device.serial}
-
         # Reset extra attributes
         self._set_initial_state()
 

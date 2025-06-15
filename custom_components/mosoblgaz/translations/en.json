@@ -221,7 +221,7 @@
                 }
             },
             "meter": {
-                "name": "Gas meter {meter_serial}",
+                "name": "Gas utilization",
                 "state_attributes": {
                     "balance": {
                         "name": "Balance"

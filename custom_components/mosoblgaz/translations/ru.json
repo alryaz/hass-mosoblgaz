@@ -221,7 +221,7 @@
                 }
             },
             "meter": {
-                "name": "Счетчик газа {meter_serial}",
+                "name": "Потребление газа",
                 "state_attributes": {
                     "balance": {
                         "name": "Баланс"
