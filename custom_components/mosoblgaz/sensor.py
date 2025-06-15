@@ -101,7 +101,7 @@ async def async_setup_entry(
         for meter in contract.meters.values():
             new_entities.append(MosoblgazMeterSensor(coordinator, meter))
 
-        for  device in contract.devices.values():
+        for device in contract.devices.values():
             if device.is_archived:
                 continue
             if not device.is_active:
