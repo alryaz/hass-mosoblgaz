@@ -112,7 +112,7 @@ jobs:
 
       - name: Delete Release (if exists)
         if: ${{ env.CURRENT_VERSION != env.PREVIOUS_VERSION }}
-        run: gh release delete "v${{ env.CURRENT_VERSION }}" --cleanup-tag
+        run: gh release delete "${{ env.CURRENT_VERSION }}" --cleanup-tag
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
