@@ -11,5 +11,5 @@ permissions:
 
 jobs:
   call-auto-release:
-    uses: alryaz/github-actions/auto-release-upload.yml@main
+    uses: alryaz/github-actions/.github/workflows/auto-release-upload.yml@main
     secrets: inherit
