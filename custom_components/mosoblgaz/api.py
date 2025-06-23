@@ -293,11 +293,10 @@ class MosoblgazAPI:
         self.username = username
         self.password = password
         self.graphql_token = graphql_token
-
-        self._site_key = site_key
+        self.x_system_auth_token = x_system_auth_token
+        self.site_key = site_key
 
         self._session = session or aiohttp.ClientSession()
-        self._x_system_auth_token: str | None = x_system_auth_token
         self._last_captcha: CaptchaResponse | None = None
 
         self._contracts: dict[str, Contract] = {}
@@ -324,7 +323,7 @@ class MosoblgazAPI:
                 ):
                     _LOGGER.debug("Site key: %s", m.group(1))
                     # Update site key
-                    self._site_key = m.group(1)
+                    self.site_key = m.group(1)
                 else:
                     _LOGGER.debug("No site key found on request")
 
@@ -401,6 +400,10 @@ class MosoblgazAPI:
 
         return x_system_auth_token
 
+    async def update_x_system_auth_token(self) -> str:
+        self.x_system_auth_token = await self.fetch_x_system_auth_token()
+        return self.x_system_auth_token
+
     async def solve_captcha(
         self, result: str, captcha: CaptchaResponse | None = None
     ) -> str:
@@ -415,7 +418,7 @@ class MosoblgazAPI:
         async with self._session.put(
             self.CAPTCHA_URL + "/api/captchas/" + captcha.token,
             json={"inputValue": result},
-            headers={"Site-Key": self._site_key} if self._site_key else {},
+            headers={"Site-Key": self.site_key} if self.site_key else {},
         ) as response:
             data = await response.json()
 
@@ -434,10 +437,10 @@ class MosoblgazAPI:
         self, action: str = "login"
     ) -> CaptchaResponse | str:
         """Retrieve temporary token or captcha token"""
-        site_key = self._site_key
+        site_key = self.site_key
         if not site_key:
             await self.fetch_csrf_token()
-            site_key = self._site_key
+            site_key = self.site_key
             if not site_key:
                 raise AuthenticationFailedException(
                     "site key not found for temporary token request"
@@ -451,7 +454,7 @@ class MosoblgazAPI:
                 async with self._session.put(
                     self.CAPTCHA_URL + "/api/captchas/reissue",
                     data=self._last_captcha.token,
-                    headers={"Site-Key": self._site_key},
+                    headers={"Site-Key": self.site_key},
                 ) as response:
                     data = await response.json()
             except aiohttp.ClientResponseError:
@@ -466,7 +469,7 @@ class MosoblgazAPI:
             async with self._session.post(
                 self.CAPTCHA_URL + "/api/captchas",
                 json={"action": action},
-                headers={"Site-Key": self._site_key},
+                headers={"Site-Key": self.site_key},
             ) as response:
                 data = await response.json()
 
@@ -515,7 +518,7 @@ class MosoblgazAPI:
             self.fetch_x_system_auth_token(),
         )
 
-        self._x_system_auth_token = x_system_auth_token
+        self.x_system_auth_token = x_system_auth_token
 
         try:
             auth_request_data = {
@@ -743,7 +746,7 @@ class MosoblgazAPI:
         value: int | float,
         date_: datetime | date | None = None,
     ):
-        x_system_auth_token = self._x_system_auth_token
+        x_system_auth_token = self.x_system_auth_token
         if x_system_auth_token is None:
             raise AuthenticationFailedException("X-SYSTEM-AUTH token required")
         graphql_token = self.graphql_token

@@ -132,6 +132,11 @@ class MosoblgazUpdateCoordinator(DataUpdateCoordinator[dict[str, Contract]]):
 
     async def _async_update_data(self) -> dict[str, Contract]:
         if self.api.graphql_token:
+            # Fetch X-SYSTEM-Auth token here if not present
+            if not self.api.x_system_auth_token:
+                await self.api.update_x_system_auth_token()
+
+            # Attempt to authenticate with existing GraphQL token
             try:
                 contracts = await async_run_with_exceptions(
                     self.api.fetch_contracts(with_data=True)
@@ -141,6 +146,7 @@ class MosoblgazUpdateCoordinator(DataUpdateCoordinator[dict[str, Contract]]):
                 self.api.graphql_token = None
 
         if not self.api.graphql_token:
+            # Refresh all tokens; also check if CAPTCHA is required now
             temporary_token = await self.api.fetch_temporary_token()
             if isinstance(temporary_token, CaptchaResponse):
                 raise ConfigEntryAuthFailed("CAPTCHA input required")
