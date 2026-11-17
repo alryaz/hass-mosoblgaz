@@ -1,7 +1,15 @@
 {
     "config": {
+        "abort": {
+            "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log.",
+            "cannot_connect": "Failed to connect to the Mosoblgaz API. Please try again later.",
+            "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later.",
+            "wrong_account": "The credentials belong to a different Mosoblgaz account."
+        },
         "error": {
             "api_error": "An error occurred while exchanging data with the Mosoblgaz API. Error data is available in the log.",
+            "empty_temporary_token": "Could not obtain a temporary token. Please try again.",
+            "invalid_captcha": "Invalid CAPTCHA. Please try again.",
             "invalid_credentials": "Invalid username or password.",
             "partial_offline": "Mosoblgaz service has been suspended for temporary technical work.\nPlease try to set up later."
         },

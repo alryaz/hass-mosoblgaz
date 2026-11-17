@@ -32,6 +32,32 @@ def convert_date_dict(date_dict: dict[str, str | int]) -> datetime:
 
 MOSCOW_TIMEZONE = gettz("Europe/Moscow")
 
+# CAPTCHA site key used by the current LKK SPA. It is embedded in main.js,
+# but is kept as a fallback in case the asset manifest cannot be fetched.
+DEFAULT_SITE_KEY = (
+    "58b0f26102ad57c0bd1766a180e39abd6c2cc8a0620a54bf9e90556c5f0780b41d"
+    "d031da9d1f96db3708990d179b88cb5"
+)
+
+
+def _as_mapping(value: Any) -> dict[str, Any] | Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _extract_device_ids(contract: Any) -> set[str]:
+    """Extract device IDs without assuming that contractData is populated."""
+    contract_data = _as_mapping(_as_mapping(contract).get("contractData"))
+    devices = _as_list(contract_data.get("Devices"))
+    return {
+        device["ID"]
+        for device in devices
+        if isinstance(device, Mapping) and device.get("ID")
+    }
+
 
 def today_blackout(
     check: datetime | None = None,
@@ -277,9 +303,11 @@ class CaptchaResponse(NamedTuple):
 
 class MosoblgazAPI:
     BASE_URL = "https://lkk.mosoblgaz.ru"
-    AUTH_URL = BASE_URL + "/auth/login"
+    # /auth/login now redirects to the SPA; JSON login is served from /login.
+    AUTH_URL = BASE_URL + "/login"
     BATCH_URL = BASE_URL + "/graphql/batch"
     CAPTCHA_URL = "https://captcha.mosoblgaz.ru"
+    ASSET_MANIFEST_URL = BASE_URL + "/lkk3/asset-manifest.json"
 
     def __init__(
         self,
@@ -309,44 +337,49 @@ class MosoblgazAPI:
     def is_logged_in(self):
         return self.graphql_token is not None
 
-    async def fetch_csrf_token(self):
-        fetch_url = self.AUTH_URL
-        _LOGGER.debug("Fetching CSRF token")
+    async def fetch_site_key(self) -> str | None:
+        """Discover the CAPTCHA site key from the current SPA assets.
+
+        The login page no longer contains either a CSRF token or the captcha
+        script tag. The site key is now compiled into main.js, referenced by
+        /lkk3/asset-manifest.json.
+        """
+        if self.site_key:
+            return self.site_key
 
         try:
-            async with self._session.get(fetch_url) as request:
-                html = await request.text()
+            async with self._session.get(
+                self.ASSET_MANIFEST_URL, allow_redirects=False
+            ) as request:
+                request.raise_for_status()
+                manifest = await request.json()
 
-                if m := re.search(
-                    re.escape(self.CAPTCHA_URL + "/api.js?site-key=") + r"([a-f0-9]+)",
-                    html,
-                ):
-                    _LOGGER.debug("Site key: %s", m.group(1))
-                    # Update site key
-                    self.site_key = m.group(1)
-                else:
-                    _LOGGER.debug("No site key found on request")
+            main_js_location = _as_mapping(manifest).get("files", {}).get("main.js")
+            if not isinstance(main_js_location, str):
+                raise ValueError("Asset manifest does not contain main.js")
 
-                results = re.search(r'csrf_token"\s+value="([^"]+)', html)
+            async with self._session.get(
+                self.BASE_URL + main_js_location, allow_redirects=False
+            ) as request:
+                request.raise_for_status()
+                js_code = await request.text()
 
-                if results is None:
-                    raise AuthenticationFailedException("No CSRF token found")
+            if m := re.search(
+                r"""["']?site-key["']?\s*:\s*["']([a-f0-9]+)["']""",
+                js_code,
+            ):
+                self.site_key = m.group(1)
+                _LOGGER.debug("Fetched CAPTCHA site key: %s", self.site_key)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError) as exc:
+            _LOGGER.warning("Could not fetch CAPTCHA site key: %s", exc)
 
-        except aiohttp.ClientError as exc:
-            error_msg = f"Error fetching CSRF token: {exc}"
-            _LOGGER.error(error_msg)
-            raise AuthenticationFailedException(error_msg)
+        if not self.site_key:
+            _LOGGER.warning(
+                "CAPTCHA site key not found in SPA assets; using known key"
+            )
+            self.site_key = DEFAULT_SITE_KEY
 
-        except asyncio.TimeoutError:
-            error_msg = "Timeout fetching CSRF token"
-            _LOGGER.error(error_msg)
-            raise AuthenticationFailedException(error_msg)
-
-        csrf_token = results[1]
-
-        _LOGGER.debug(f"Fetched CSRF token: {csrf_token}")
-
-        return csrf_token
+        return self.site_key
 
     async def fetch_x_system_auth_token(self):
         try:
@@ -437,31 +470,23 @@ class MosoblgazAPI:
         self, action: str = "login"
     ) -> CaptchaResponse | str:
         """Retrieve temporary token or captcha token"""
-        site_key = self.site_key
-        if not site_key:
-            await self.fetch_csrf_token()
-            site_key = self.site_key
-            if not site_key:
-                raise AuthenticationFailedException(
-                    "site key not found for temporary token request"
-                )
+        site_key = await self.fetch_site_key()
 
-        _LOGGER.debug(f"Fetching temporary token for action: {action}")
+        _LOGGER.debug("Fetching temporary token for action: %s", action)
 
         data: dict | None = None
         if self._last_captcha:
             try:
                 async with self._session.put(
-                    self.CAPTCHA_URL + "/api/captchas/reissue",
-                    data=self._last_captcha.token,
-                    headers={"Site-Key": self.site_key},
+                    self.CAPTCHA_URL
+                    + "/api/captchas/reissue/"
+                    + self._last_captcha.token,
+                    json={},
+                    headers={"Site-Key": site_key} if site_key else {},
                 ) as response:
                     data = await response.json()
-            except aiohttp.ClientResponseError:
-                _LOGGER.error("Request error on CAPTCHA re-issue")
-                data = None
-            except json.JSONDecodeError:
-                _LOGGER.error("Decoding error on CAPTCHA re-issue")
+            except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+                _LOGGER.warning("Could not re-issue CAPTCHA; requesting a new one")
                 data = None
 
         if data is None:
@@ -469,7 +494,7 @@ class MosoblgazAPI:
             async with self._session.post(
                 self.CAPTCHA_URL + "/api/captchas",
                 json={"action": action},
-                headers={"Site-Key": self.site_key},
+                headers={"Site-Key": site_key} if site_key else {},
             ) as response:
                 data = await response.json()
 
@@ -513,10 +538,7 @@ class MosoblgazAPI:
         """Perform authentication.
 
         Captcha argument contains: [token, response]."""
-        csrf_token, x_system_auth_token = await asyncio.gather(
-            self.fetch_csrf_token(),
-            self.fetch_x_system_auth_token(),
-        )
+        x_system_auth_token = await self.fetch_x_system_auth_token()
 
         self.x_system_auth_token = x_system_auth_token
 
@@ -526,11 +548,15 @@ class MosoblgazAPI:
                 "mog_login[password]": self.password,
                 "mog_login[captcha]": captcha_result,
                 "mog-captcha-response": temporary_token,
-                "_csrf_token": csrf_token,
+                # Current SPA posts an empty CSRF token.
+                "_csrf_token": "",
                 "_remember_me": "on",
             }
 
-            _LOGGER.debug("REQUEST DATA: %s", auth_request_data)
+            _LOGGER.debug(
+                "Authentication request data: %s",
+                {**auth_request_data, "mog_login[password]": "***"},
+            )
 
             # Perform authentication request
             async with self._session.post(
@@ -707,11 +733,14 @@ class MosoblgazAPI:
         )
 
         contract_ids = set()
-        for contract in contracts_response["me"]["contracts"]:
-            device_ids = {
-                device["ID"] for device in contract["contractData"]["Devices"]
-            }
-            contract_id = contract["number"]
+        contracts = _as_list(
+            _as_mapping(_as_mapping(contracts_response).get("me")).get("contracts")
+        )
+        for contract in contracts:
+            device_ids = _extract_device_ids(contract)
+            contract_id = _as_mapping(contract).get("number")
+            if not contract_id:
+                continue
             contract_ids.add(contract_id)
 
             if contract_id in self._contracts:
@@ -733,7 +762,10 @@ class MosoblgazAPI:
                     ]
                 ),
             ):
-                contract.data = data["me"]["contract"]
+                contract_data = _as_mapping(data).get("me")
+                contract_data = _as_mapping(contract_data).get("contract")
+                if contract_data:
+                    contract.data = contract_data
 
         _LOGGER.debug(f"Fetched contracts data: {self._contracts}")
 
@@ -812,7 +844,10 @@ class Contract:
         return self._data
 
     @data.setter
-    def data(self, value: dict[str, Any]):
+    def data(self, value: dict[str, Any] | None):
+        if not value:
+            self._data = None
+            return
         self._data = value
 
         device_ids = set()
@@ -845,7 +880,10 @@ class Contract:
             self._invoices = {}
 
         for invoice_group in INVOICE_GROUPS:
-            invoice_data = self._data["calculationsAndPayments"].get(invoice_group)
+            calculations = _as_mapping(
+                self._property_data.get("calculationsAndPayments")
+            )
+            invoice_data = calculations.get(invoice_group)
             invoices = self._invoices.setdefault(invoice_group, {})
 
             if invoice_data:
@@ -967,7 +1005,8 @@ class Contract:
 
     @property
     def devices_data(self) -> list[dict[str, Any]]:
-        return self._property_data["contractData"]["Devices"]
+        contract_data = _as_mapping(self._property_data.get("contractData"))
+        return _as_list(contract_data.get("Devices"))
 
     @property
     def meters_data(self):
@@ -980,7 +1019,8 @@ class Contract:
 
     @property
     def history_data(self):
-        return self._property_data["metersHistory"]["data"]
+        meters_history = _as_mapping(self._property_data.get("metersHistory"))
+        return _as_list(meters_history.get("data"))
 
     async def push_indication(
         self,
@@ -1086,7 +1126,7 @@ class Meter(Device):
             self._history = {}
 
         last_history_period = (0, 0, 0)
-        for history_data in value:
+        for history_data in _as_list(value):
             history_date = convert_date_dict(history_data["Date"])
             period = (history_date.year, history_date.month, history_date.day)
 
@@ -1102,7 +1142,7 @@ class Meter(Device):
 
     @property
     def last_history_entry(self) -> "HistoryEntry | None":
-        if self._history is not None:
+        if self._history and self._last_history_period in self._history:
             return self.history[self._last_history_period]
 
     async def push_indication(
