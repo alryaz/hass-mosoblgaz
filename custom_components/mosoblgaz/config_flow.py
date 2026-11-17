@@ -1,7 +1,9 @@
+import asyncio
 from base64 import b64encode
 import logging
 from typing import Any, Final, Mapping
 
+import aiohttp
 from homeassistant.helpers.aiohttp_client import (
     async_get_clientsession,
 )
@@ -12,7 +14,6 @@ from homeassistant.config_entries import (
     ConfigFlow,
     ConfigFlowResult,
     OptionsFlow,
-    CONN_CLASS_CLOUD_POLL,
 )
 from homeassistant.const import (
     CONF_PASSWORD,
@@ -80,7 +81,6 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
 
     VERSION = 3
     MINOR_VERSION = 2
-    CONNECTION_CLASS = CONN_CLASS_CLOUD_POLL
 
     _api: MosoblgazAPI
 
@@ -104,7 +104,17 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         _LOGGER.info("Showing user step")
 
         # Prefetch temporary token
-        self._temporary_token = await self._api.fetch_temporary_token()
+        try:
+            self._temporary_token = await self._api.fetch_temporary_token()
+        except (
+            MosoblgazException,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            ValueError,
+        ) as exc:
+            _LOGGER.warning("Cannot start Mosoblgaz config flow: %s", exc)
+            return self.async_abort(reason="cannot_connect")
+
         if isinstance(self._temporary_token, CaptchaResponse):
             method = self.async_step_with_captcha
         else:
@@ -129,7 +139,16 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
             # something managed to lose temporary token. While this
             # should never occur, fix it 'just in case it happens'.
             _LOGGER.debug("Fixing flow on non-existing temporary token")
-            self._temporary_token = await self._api.fetch_temporary_token()
+            try:
+                self._temporary_token = await self._api.fetch_temporary_token()
+            except (
+                MosoblgazException,
+                aiohttp.ClientError,
+                asyncio.TimeoutError,
+                ValueError,
+            ) as exc:
+                _LOGGER.warning("Cannot refresh Mosoblgaz temporary token: %s", exc)
+                raise _FormException({"base": "api_error"}) from exc
 
         if isinstance(self._temporary_token, CaptchaResponse):
             try:
@@ -150,14 +169,28 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
                         return self.async_abort(reason="partial_offline")
                     except AuthenticationFailedException:
                         raise _FormException({"captcha": "invalid_captcha"})
-                    except MosoblgazException:
-                        raise _FormException({"base": "unknown_error"})
+                    except (
+                        MosoblgazException,
+                        aiohttp.ClientError,
+                        asyncio.TimeoutError,
+                        ValueError,
+                    ) as exc:
+                        raise _FormException({"base": "api_error"}) from exc
                     if not self._temporary_token:
                         # @TODO: handle this issue
                         raise _FormException({"base": "empty_temporary_token"})
                 else:
                     # Attempt to fetch a new CAPTCHA
-                    self._temporary_token = await self._api.fetch_temporary_token()
+                    try:
+                        self._temporary_token = await self._api.fetch_temporary_token()
+                    except (
+                        MosoblgazException,
+                        aiohttp.ClientError,
+                        asyncio.TimeoutError,
+                        ValueError,
+                    ) as exc:
+                        _LOGGER.warning("Cannot refresh Mosoblgaz CAPTCHA: %s", exc)
+                        raise _FormException({"base": "api_error"}) from exc
 
         if isinstance(self._temporary_token, CaptchaResponse):
             return await self.async_step_with_captcha(user_input, True)
@@ -169,8 +202,13 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
         except AuthenticationFailedException:
             # @TODO: handle this issue
             raise _FormException({"base": "invalid_credentials"})
-        except MosoblgazException:
-            raise _FormException({"base": "unknown_error"})
+        except (
+            MosoblgazException,
+            aiohttp.ClientError,
+            asyncio.TimeoutError,
+            ValueError,
+        ) as exc:
+            raise _FormException({"base": "api_error"}) from exc
 
         data = {
             CONF_PASSWORD: self._api.password,
@@ -224,18 +262,24 @@ class MosoblgazFlowHandler(ConfigFlow, domain=DOMAIN):
                 errors = exc.args[0]
         temporay_token = self._temporary_token
         if not isinstance(temporay_token, CaptchaResponse):
-            return self.async_abort(reason="unknown_error")
+            return self.async_abort(reason="api_error")
         description_placeholders = {
             "captcha_token": temporay_token.token,
             "captcha_valid": temporay_token.valid_until,
+            "captcha_url": "",
         }
-        async with self._api._session.get(temporay_token.file_url) as response:
-            description_placeholders["captcha_url"] = (
-                "data:image/"
-                + temporay_token.file_url.rsplit(".", 1)[1]
-                + ";base64,"
-                + b64encode(await response.read()).decode("ascii")
-            )
+        try:
+            async with self._api._session.get(temporay_token.file_url) as response:
+                response.raise_for_status()
+                description_placeholders["captcha_url"] = (
+                    "data:image/"
+                    + temporay_token.file_url.rsplit(".", 1)[1]
+                    + ";base64,"
+                    + b64encode(await response.read()).decode("ascii")
+                )
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            _LOGGER.warning("Cannot load Mosoblgaz CAPTCHA image: %s", exc)
+            errors = {**(errors or {}), "base": "api_error"}
         return self.async_show_form(
             step_id="with_captcha",
             data_schema=self.add_suggested_values_to_schema(
